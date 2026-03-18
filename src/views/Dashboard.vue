@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { Bar, Doughnut, Pie } from 'vue-chartjs';
 import { 
-  Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, RadialLinearScale, ArcElement, PointElement, LineElement 
+  Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, RadialLinearScale, ArcElement, PointElement, LineElement, BarController, LineController
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { 
@@ -20,6 +20,8 @@ ChartJS.register(
     ArcElement, 
     PointElement, 
     LineElement, 
+    BarController,
+    LineController,
     Title, 
     Tooltip, 
     Legend, 
