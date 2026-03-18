@@ -1,0 +1,55 @@
+[
+  {
+    "id": 1,
+    "titulo": "Dashboard",
+    "icone": "LayoutDashboard",
+    "rota": null,
+    "pai_id": null,
+    "ordem": 1,
+    "tipo": "grupo",
+    "submenus": [
+      { "id": 2, "titulo": "Região", "rota": "/dashboards/frotas", "ordem": 1 },
+      { "id": 3, "titulo": "Região 2", "rota": "/", "ordem": 1 },
+      { "id": 4, "titulo": "Oportunidades", "rota": "/dashboards/oportunidades", "ordem": 1 },
+      { "id": 5, "titulo": "Oportunidades 2", "rota": "/dashboards/oportunit", "ordem": 1 },
+      { "id": 6, "titulo": "IBP", "rota": "/dashboards/ibp", "ordem": 1 },
+      { "id": 7, "titulo": "IBP 2", "rota": "/dashboards/ibp2", "ordem": 1 }
+    ]
+  },
+  {
+    "id": 20,
+    "titulo": "Ferramentas",
+    "icone": null,
+    "rota": null,
+    "pai_id": null,
+    "ordem": 4,
+    "tipo": "separador"
+  },
+  {
+    "id": 21,
+    "titulo": "LubChat",
+    "icone": "MessageSquare",
+    "rota": "/lubchat",
+    "pai_id": null,
+    "ordem": 5,
+    "tipo": "link"
+  },
+  {
+    "id": 22,
+    "titulo": "Configurações",
+    "icone": null,
+    "rota": null,
+    "pai_id": null,
+    "ordem": 6,
+    "tipo": "separador"
+  },
+  {
+    "id": 24,
+    "titulo": "Usuários",
+    "icone": "Settings",
+    "rota": "/cadastros/acesso",
+    "pai_id": null,
+    "ordem": 8,
+    "tipo": "link"
+  }
+]
