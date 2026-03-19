@@ -129,6 +129,17 @@ const tableData = computed(() => {
   });
 });
 
+const marketShareCalculado = computed(() => {
+  const potencialTotalAnual = 604442286; // Valor vindo do seu Overview
+  if (!simuladorShare.value.venda || !simuladorShare.value.meses || simuladorShare.value.meses <= 0) return '0.00';
+  
+  // Ajusta o potencial anual para o período de meses digitado
+  const potencialNoPeriodo = (potencialTotalAnual / 12) * simuladorShare.value.meses;
+  const share = (simuladorShare.value.venda / potencialNoPeriodo) * 100;
+  
+  return share.toFixed(2);
+});
+
 // 1. Atualize a lógica do onMounted para o Mapa com Hover
 onMounted(() => {
   // Esta é a linha que você deve usar:
@@ -221,11 +232,13 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
 <template>
   <div class="dashboard-wrapper">
     <!-- 1. BARRA DE FILTROS SUPERIOR -->
-    <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-3">
+    <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-4">
       <Filter :size="18" class="text-dark" />
       <div v-for="f in ['VISCOSIDADE', 'API', 'ACEA', 'JASO', 'BÁSICO']" :key="f" class="filter-item">
         <label>{{ f }}:</label>
-        <select class="form-select form-select-sm"><option>Todos</option></select>
+        <select class="form-select form-select-sm" style="width: auto; min-width: 100px;">
+          <option>Todos</option>
+        </select>
       </div>
       <button class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
     </div>
@@ -234,6 +247,7 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
       
       <!-- 2. SIDEBAR ESQUERDA -->
       <div class="sidebar d-flex flex-column gap-3">
+      
         <!-- Card Filtros UF -->
         <div class="card border-0 shadow-sm p-3 rounded-4 bg-white">
             <div class="d-flex align-items-center gap-2 mb-3">
@@ -267,68 +281,13 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
         </div>
       </div>
 
-        <!-- Share x Oportunidade -->
-            <div class="col-lg-12">
-              <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 d-flex flex-column">
-                  
-                  <!-- Cabeçalho: Título à esquerda e ícone de expansão à direita -->
-                  <div class="d-flex align-items-center justify-content-between mb-4">
-                  <div class="d-flex align-items-center gap-2">
-                      <PieChart :size="20" class="text-dark" style="transform: rotate(-90deg);" />
-                      <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 11px; letter-spacing: 0.5px;">SHARE X OPORTUNIDADE</h6>
-                  </div>
-                  <ExternalLink :size="16" class="text-muted" />
-                  </div>
+        <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden" style="height: 250px;">
+    <div ref="mapContainer" class="w-100 h-100"></div>
+  </div>
 
-                  <!-- Gráfico com labels externos e linhas -->
-                  <div class="flex-grow-1 position-relative" style="height: 180px;">
-                  <Doughnut 
-                      :data="{
-                      labels: ['Sua Venda', 'Oportunidade'],
-                      datasets: [{
-                          data: [0.01, 99.99],
-                          backgroundColor: ['#e97332', '#cbd5e1'],
-                          borderWidth: 0,
-                          hoverOffset: 4
-                      }]
-                      }" 
-                      :options="{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      cutout: '60%',
-                      layout: { padding: 30 },
-                      plugins: {
-                          legend: { display: false },
-                          datalabels: {
-                          display: true,
-                          anchor: 'end',
-                          align: 'end',
-                          offset: 10,
-                          color: '#666',
-                          font: { size: 11, weight: 'bold' },
-                          formatter: (value) => value.toString().replace('.', ',') + '%',
-                          // Note: Para a linha de chamada 'L' (conector), é necessário o plugin datalabels ativo
-                          }
-                      }
-                      }" 
-                  />
-                  </div>
 
-                  <!-- Legenda Horizontal Centralizada -->
-                  <div class="mt-auto d-flex justify-content-center gap-3 pb-2" style="font-size: 11px;">
-                  <div class="d-flex align-items-center gap-2">
-                      <span class="dot" style="background: #e97332; width: 12px; height: 12px; border-radius: 50%;"></span>
-                      <span class="text-muted fw-bold">Sua Venda</span>
-                  </div>
-                  <div class="d-flex align-items-center gap-2">
-                      <span class="dot" style="background: #cbd5e1; width: 12px; height: 12px; border-radius: 50%;"></span>
-                      <span class="text-muted fw-bold">Oportunidade</span>
-                  </div>
-                  </div>
 
-              </div>
-            </div>
-            <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> <!-- Removido h-100 para não esticar -->
+            <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
     
             <!-- Header do Card -->
             <div class="d-flex justify-content-between align-items-center mb-2">
@@ -353,7 +312,10 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
             <div class="row g-2 mb-3">
                 <div class="col-8">
                     <label class="fw-bold text-dark mb-1" style="font-size: 11px;">SUA VENDA</label>
-                    <input type="number" v-model="simuladorShare.venda" class="form-control form-control-sm fw-bold" style="height: 32px; font-size: 12px;">
+                    <div class="pbi-input-custom">
+                        <span class="pbi-input-label">Lts</span>
+                        <input type="number" v-model="simuladorShare.venda" class="pbi-input-field">
+                    </div>
                 </div>
                 <div class="col-4">
                     <label class="fw-bold text-dark mb-1" style="font-size: 11px;">MESES</label>
@@ -363,20 +325,31 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
 
             <!-- Campo SHARE DESEJADO -->
             <div class="mb-1">
-                <!-- Texto de Instrução 2 - Fonte Padronizada -->
-                <p class="text-muted mb-2" style="line-height: 1.2; font-size: 11px;">
-                    Insira <span style="color: #e67e22; font-weight: 800;">SHARE DESEJADO</span> para projetar seu Market Share desejado.
-                </p>
-                
-                <!-- Box de Valor Centralizado -->
-                <div class="bg-white border rounded p-1 mb-2 d-flex align-items-center justify-content-center" style="height: 45px;">
-                    <input type="number" 
-                            v-model.number="simuladorShare.shareDesejado" 
-                            class="form-control form-control-sm fw-bold" style="height: 32px; font-size: 12px;" value="0">
-                    <span class="fw-bold fs-5 pe-2">%</span>
+            <!-- NOVA LINHA: Market Share calculado em tempo real -->
+            <div class="d-flex align-items-center justify-content-between mb-3 mt-2">
+                <span class="fw-bold text-dark" style="font-size: 11px; letter-spacing: 0.5px;">MARKET SHARE:</span>
+                <div class="bg-white border rounded-pill px-3 py-1 shadow-sm d-flex align-items-center">
+                    <span class="fw-black text-dark" style="font-size: 14px;">{{ marketShareCalculado }}%</span>
                 </div>
             </div>
+
+            <!-- Texto de Instrução 2 -->
+            <p class="text-muted mb-2" style="line-height: 1.2; font-size: 11px;">
+                Insira <span style="color: #e67e22; font-weight: 800;">SHARE DESEJADO</span> para projetar seu Market Share desejado.
+            </p>
+            
+            <!-- Box de Valor Centralizado -->
+            <div class="bg-white border rounded p-1 mb-2 d-flex align-items-center justify-content-center" style="height: 45px;">
+                <input type="number" 
+                        v-model.number="simuladorShare.shareDesejado" 
+                        class="form-control form-control-sm fw-bold border-0 text-center" style="font-size: 16px;">
+                <span class="fw-bold fs-5 pe-2">%</span>
+            </div>
         </div>
+        </div>
+
+
+        
 
       </div>
 
@@ -510,8 +483,13 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
 
         <!-- Linha Inferior -->
         <div class="row g-3 flex-grow-1">
-          <!-- Oportunidade por Tipo de Lubrificante -->
-          <div class="col-lg-8">
+          
+
+        <!-- TABELA DE DETALHAMENTO (DATAGRID) -->
+        <div class="row g-2 mt-1">
+
+        <!-- Oportunidade por Tipo de Lubrificante -->
+          <div class="col-lg-6">
               <div class="card border-0 shadow-sm p-4 rounded-4 bg-white h-100 d-flex flex-column">
                   <div class="d-flex justify-content-between align-items-center mb-4">
                       <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 14px; letter-spacing: 0.5px;">
@@ -519,10 +497,8 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
                       </h6>
                   </div>
 
-                  <!-- Removido 'overflow-x-auto' e o 'min-width' para eliminar a barra de rolagem -->
-                  <div class="flex-grow-1 pb-2">
-                      <div style="height: 250px; width: 100%;"> 
-                          <!-- OPORTUNIDADE POR TIPO DE LUBRIFICANTE (POTENCIAL POR ESPECIFICAÇÃO) -->
+                  <div class="flex-grow-1 pb-3">
+                      <div style="height: 300px; width: 100%;"> 
                               <Bar 
                                   :data="{
                                       labels: ['20W50 SL MA2', '10W30 SL MA2', '10W40 SL MA2', '10W30 SL MA', '15W50 SP MA2', '10W30 SM MA2', '10W40 SP MA2', '10W40 SL MA', '20W50 SL MA', '15W50 SL MA2'],
@@ -586,15 +562,9 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
                   </div>
               </div>
           </div>
-          <!-- Mapa -->
-          <div class="col-lg-4">
-            <div ref="mapContainer" class="card border-0 shadow-sm rounded-4 h-100 bg-white overflow-hidden"></div>
-          </div>
 
 
-        <!-- TABELA DE DETALHAMENTO (DATAGRID) -->
-        <div class="row g-2 mt-1">
-          <div class="col-12">
+          <div class="col-6">
             <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
               <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
                 <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 14px;">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
@@ -614,8 +584,8 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
                   </thead>
                   <tbody>
                     <tr v-for="(row, idx) in tableData" :key="idx" class="border-bottom">
-                      <td class="ps-4 fw-bold text-dark" style="font-size: 13px;">{{ row.especificacao }}</td>
-                      <td class="text-end fw-bold" style="font-size: 13px;">{{ fmtNum(row.potencial) }}</td>
+                      <td class="ps-4 fw-bold text-dark">{{ row.especificacao }}</td>
+                      <td class="text-end fw-bold">{{ fmtNum(row.potencial) }}</td>
                       <td class="text-end">
                         <div class="d-flex justify-content-end">
                           <input type="text" 
@@ -624,7 +594,7 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
                                  :value="Math.floor(row.vendaEst)">
                         </div>
                       </td>
-                      <td class="text-end text-muted" style="font-size: 13px;">{{ fmtNum(row.gap) }}</td>
+                      <td class="text-end text-muted">{{ fmtNum(row.gap) }}</td>
                       <td class="text-end pe-4">
                         <span class="badge bg-light text-dark border fw-bold" style="font-size: 11px;">{{ row.share }}</span>
                       </td>
@@ -660,8 +630,22 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
 
 /* BARRA SUPERIOR */
 .top-filter-bar { height: 60px; z-index: 100; }
-.filter-item { display: flex; flex-direction: column; }
-.filter-item label { font-size: 9px; font-weight: 800; color: #334155; }
+
+
+.filter-item { 
+  display: flex; 
+  align-items: center; /* Alinha verticalmente no centro */
+  gap: 8px;            /* Espaço entre o título e o select */
+}
+.filter-item label { 
+  font-size: 9px; 
+  font-weight: 800; 
+  color: #334155; 
+  white-space: nowrap; /* Impede que o texto quebre linha */
+  margin-bottom: 0;    /* Remove margem inferior que empurra o select */
+}
+
+
 .form-select-sm { padding: 0.1rem 1.5rem 0.1rem 0.5rem; font-size: 11px; }
 .btn-red-total { background-color: #ff0000; color: white; border: none; }
 
@@ -833,5 +817,71 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
     font-weight: 700;
 }
 
+.table-responsive table th { 
+    font-size: 10px !important; 
+    padding-top: 8px !important; 
+    padding-bottom: 8px !important; 
+}
+
+.table-responsive table td { 
+    font-size: 11px !important; 
+    padding-top: 4px !important; 
+    padding-bottom: 4px !important; 
+}
+
+/* Ajuste do input dentro da tabela para acompanhar a fonte */
+.table-responsive .form-control-sm { 
+    font-size: 11px !important; 
+    height: 25px !important; 
+}
+
+
+/* Estilo Customizado para o Input com prefixo Lts */
+.pbi-input-custom {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 50px; /* Formato de pílula/arredondado */
+  overflow: hidden;
+  height: 32px;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Efeito de foco (borda laranja igual ao seu print) */
+.pbi-input-custom:focus-within {
+  border-color: #e97332;
+  box-shadow: 0 0 0 3px rgba(233, 115, 50, 0.15);
+}
+
+.pbi-input-label {
+  background-color: #f8fafc;
+  color: #1a2332;
+  font-weight: 800;
+  font-size: 11px;
+  padding: 0 12px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid #dee2e6;
+}
+
+.pbi-input-field {
+  border: none;
+  flex: 1;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  outline: none;
+  background: transparent;
+}
+
+/* Remove as setinhas padrão do campo de número para ficar mais limpo */
+.pbi-input-field::-webkit-inner-spin-button,
+.pbi-input-field::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
 </style>
