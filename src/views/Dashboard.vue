@@ -82,6 +82,26 @@ const doughnutOptionsExtended = {
     cutout: '60%'
 };
 
+const normasOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: { padding: 45 }, // Aumentei um pouco o padding para caber os números de litros
+    plugins: {
+        legend: { display: false },
+        datalabels: {
+            display: true,
+            anchor: 'end',
+            align: 'end',
+            offset: 8,
+            color: '#666',
+            font: { size: 10, weight: 'bold' },
+            // Formata para padrão brasileiro (ex: 37,01) sem o símbolo de %
+            formatter: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+        }
+    },
+    cutout: '60%'
+};
+
 const basicData = { 
     labels: ['MINERAL', 'SINTÉTICO', 'SEMISSINTÉTICO'], 
     datasets: [{ data: [42.43, 17.96, 39.59], backgroundColor: orangePalette, borderWidth: 0 }] 
@@ -562,37 +582,40 @@ watch(selectedUF, () => updateMapHighlight());
                                                 }
                                             }
                                         },
+                                        
                                         scales: {
-                                            y: { 
-                                                type: 'linear',
-                                                display: true,
-                                                position: 'left',
-                                                grid: { display: false },
-                                                ticks: { font: { size: 9 } },
-                                                title: { display: false }
-                                            },
-                                            y1: {
-                                                type: 'linear',
-                                                display: true,
-                                                position: 'right',
-                                                min: 0,
-                                                max: 120, // Margem para o gráfico não bater no topo
-                                                grid: { 
-                                                    drawOnChartArea: true,
-                                                    borderDash: [3, 3],
-                                                    color: '#e2e8f0'
+                                                y: { 
+                                                    type: 'linear',
+                                                    display: true,
+                                                    position: 'left',
+                                                    // Alteração: Definimos um max maior que o maior valor (29.7) 
+                                                    // para sobrar espaço no topo das barras
+                                                    min: 0,
+                                                    max: 55, 
+                                                    grid: { display: false },
+                                                    ticks: { font: { size: 9 } }
                                                 },
-                                                ticks: { 
-                                                    font: { size: 9 },
-                                                    callback: (val) => val + '%'
+                                                y1: {
+                                                    type: 'linear',
+                                                    display: true,
+                                                    position: 'right',
+                                                    min: -40, 
+                                                    max: 110,
+                                                    grid: { 
+                                                        drawOnChartArea: true,
+                                                        borderDash: [3, 3],
+                                                        color: '#e2e8f0'
+                                                    },
+                                                    ticks: { 
+                                                        font: { size: 9 },
+                                                        callback: (val) => val >= 0 ? val + '%' : '' // Esconde valores negativos na legenda
+                                                    }
+                                                },
+                                                x: { 
+                                                    grid: { display: false },
+                                                    ticks: { font: { size: 9, weight: 'bold' } }
                                                 }
-                                            },
-                                            x: { 
-                                                grid: { display: false },
-                                                border: { display: false },
-                                                ticks: { font: { size: 9, weight: 'bold' } }
                                             }
-                                        }
                                     }" 
                                 />
                             </div>
@@ -635,7 +658,7 @@ watch(selectedUF, () => updateMapHighlight());
                     <div class="card border-0 shadow-sm p-3 rounded-4 h-100 bg-white">
                         <small class="fw-bold text-muted mb-2 d-block text-start" style="font-size: 11px;">NORMAS</small>
                         <div style="height: 180px;">
-                            <Doughnut :data="normasData" :options="doughnutOptionsExtended" />
+                            <Doughnut :data="normasData" :options="normasOptions" /> <!-- Alterado aqui -->
                         </div>
                     </div>
                 </div>
