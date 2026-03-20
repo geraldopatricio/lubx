@@ -85,18 +85,42 @@ const doughnutOptionsExtended = {
 const normasOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: 45 }, // Aumentei um pouco o padding para caber os números de litros
+    layout: { padding: 25 }, // Espaço para os labels externos não cortarem
     plugins: {
         legend: { display: false },
         datalabels: {
             display: true,
             anchor: 'end',
             align: 'end',
-            offset: 8,
-            color: '#666',
+            offset: 10,
+            color: '#444',
             font: { size: 10, weight: 'bold' },
-            // Formata para padrão brasileiro (ex: 37,01) sem o símbolo de %
-            formatter: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+            formatter: (value) => value.toFixed(2).replace('.', ',') + '%'
+        },
+        tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            titleColor: '#333',
+            bodyColor: '#666',
+            borderColor: '#ddd',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 4,
+            displayColors: false,
+            callbacks: {
+                title: (items) => `LUBRIFICANTE-NORMA: ${items[0].label}`,
+                label: (item) => {
+                    const dataset = item.dataset;
+                    const index = item.dataIndex;
+                    const litros = dataset.litrosPorAno[index];
+                    const frota = dataset.frotaGeral[index];
+                    const percent = item.raw;
+                    return [
+                        `Litros por ano: ${litros} (${percent.toFixed(2)}%)`,
+                        `frota Geral: ${frota}`
+                    ];
+                }
+            }
         }
     },
     cutout: '60%'
@@ -113,11 +137,15 @@ const segmentoData = {
 };
 
 const normasData = { 
-    labels: ['VW', 'MB', 'FIAT', 'GM', 'FORD', 'OUTROS'], 
+    labels: ['FIAT 9.55535-G1', 'VW 508.88', 'MB 229.5', 'GM dexos1', 'FORD WSS-M2C913-D', 'BMW LL-01', 'RENAULT RN0700', 'TOYOTA ATF', 'HONDA HCF-2', 'HYUNDAI SP-IV', 'OUTROS'], 
     datasets: [{ 
-        data: [37.01, 14.03, 7.39, 5.62, 3.42, 2.7, 2.17, 1.51, 0.97, 0.82, 0.55, 0.3], 
+        data: [45.13, 13.72, 6.05, 3.84, 2.93, 2.55, 1.80, 1.50, 1.20, 1.10, 20.18], 
         backgroundColor: normasPalette, 
-        borderWidth: 0 
+        borderWidth: 1,
+        borderColor: '#fff',
+        // Dados extras para o Tooltip (mocado)
+        litrosPorAno: ['324.677', '125.400', '88.300', '55.200', '42.100', '35.000', '28.000', '22.000', '18.000', '15.000', '250.000'],
+        frotaGeral: ['100.749', '45.000', '32.100', '22.500', '18.400', '15.200', '12.100', '10.000', '8.500', '7.200', '95.000']
     }] 
 };
 
