@@ -231,9 +231,8 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
 
 <template>
   <div class="dashboard-wrapper">
-    <!-- 1. BARRA DE FILTROS SUPERIOR -->
     <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-4">
-      <Filter :size="18" class="text-dark" />
+      
       <div v-for="f in ['VISCOSIDADE', 'API', 'ACEA', 'JASO', 'BÁSICO']" :key="f" class="filter-item">
         <label>{{ f }}:</label>
         <select class="form-select form-select-sm" style="width: auto; min-width: 100px;">
@@ -488,83 +487,7 @@ const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
         <!-- TABELA DE DETALHAMENTO (DATAGRID) -->
         <div class="row g-2 mt-1">
 
-        <!-- Oportunidade por Tipo de Lubrificante -->
-          <div class="col-lg-6">
-              <div class="card border-0 shadow-sm p-4 rounded-4 bg-white h-100 d-flex flex-column">
-                  <div class="d-flex justify-content-between align-items-center mb-4">
-                      <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 14px; letter-spacing: 0.5px;">
-                          OPORTUNIDADE POR TIPO DE LUBRIFICANTE
-                      </h6>
-                  </div>
-
-                  <div class="flex-grow-1 pb-3">
-                      <div style="height: 300px; width: 100%;"> 
-                              <Bar 
-                                  :data="{
-                                      labels: ['20W50 SL MA2', '10W30 SL MA2', '10W40 SL MA2', '10W30 SL MA', '15W50 SP MA2', '10W30 SM MA2', '10W40 SP MA2', '10W40 SL MA', '20W50 SL MA', '15W50 SL MA2'],
-                                      datasets: [
-                                          {
-                                              label: 'Sua Venda (Est.)',
-                                              backgroundColor: '#e97332', // Laranja Forte
-                                              data: [50, 40, 30, 20, 15, 10, 5, 3, 2, 1], // Valores de exemplo (Sua Venda)
-                                              stack: 'stack1',
-                                              barThickness: 30
-                                          },
-                                          {
-                                              label: 'Gap de Mercado',
-                                              backgroundColor: '#fed7aa', // Laranja Claro/Pêssego (igual à foto)
-                                              data: [8948, 7662, 4432, 1697, 1664, 1561, 1081, 803, 598, 579], // Valores de exemplo (Gap)
-                                              stack: 'stack1',
-                                              barThickness: 30
-                                          }
-                                      ]
-                                  }" 
-                                  :options="{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                          legend: { 
-                                              display: true, 
-                                              position: 'top',
-                                              align: 'center',
-                                              labels: {
-                                                  boxWidth: 40,
-                                                  padding: 20,
-                                                  font: { size: 12, weight: '500' },
-                                                  color: '#666'
-                                              }
-                                          },
-                                          datalabels: { display: false }
-                                      },
-                                      scales: {
-                                          y: {
-                                              beginAtZero: true,
-                                              grid: { color: '#f1f5f9', drawBorder: false },
-                                              ticks: { 
-                                                  stepSize: 2000, 
-                                                  font: { size: 11 },
-                                                  callback: (value) => value + 'k' // Adiciona o 'k' conforme a foto
-                                              }
-                                          },
-                                          x: {
-                                              grid: { display: false },
-                                              ticks: { 
-                                                  maxRotation: 35, // Inclinação dos nomes (deitado)
-                                                  minRotation: 35, 
-                                                  font: { size: 10, weight: '500' },
-                                                  color: '#666'
-                                              }
-                                          }
-                                      }
-                                  }" 
-                              />
-                      </div>
-                  </div>
-              </div>
-          </div>
-
-
-          <div class="col-6">
+          <div class="col-12">
             <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
               <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
                 <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 14px;">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
