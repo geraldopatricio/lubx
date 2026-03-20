@@ -599,8 +599,8 @@ watch(selectedUF, () => updateMapHighlight());
                                                     type: 'linear',
                                                     display: true,
                                                     position: 'right',
-                                                    min: -40, 
-                                                    max: 110,
+                                                    min: -60, // Diminuímos o mínimo para puxar o início da linha para baixo
+                                                    max: 200,  // Aumentamos o máximo para dar folga no topo
                                                     grid: { 
                                                         drawOnChartArea: true,
                                                         borderDash: [3, 3],
@@ -608,7 +608,7 @@ watch(selectedUF, () => updateMapHighlight());
                                                     },
                                                     ticks: { 
                                                         font: { size: 9 },
-                                                        callback: (val) => val >= 0 ? val + '%' : '' // Esconde valores negativos na legenda
+                                                        callback: (val) => val >= 0 && val <= 100 ? val + '%' : '' // Filtra para mostrar apenas 0-100% na legenda
                                                     }
                                                 },
                                                 x: { 
