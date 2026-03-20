@@ -17,7 +17,6 @@ const marcas = [
 
 const mesesLista = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-// Estados de Filtro
 const marcasAtivas = ref(marcas.map(m => m.nome));
 const mesInicio = ref(0);
 const mesFim = ref(11);
@@ -35,22 +34,29 @@ const dadosVendasOriginal = {
   'CASTROL':       [8, 7, 9, 8, 10, 8, 9, 9, 8, 10, 8, 7]
 };
 
-// --- LÓGICA DO GRÁFICO SVG ---
+// --- CONFIGURAÇÃO DO GRÁFICO ---
 const larguraSVG = 1000;
-const alturaSVG = 350;
-const paddingX = 70;
-const paddingY = 40;
-const maxY = 50;
+const alturaSVG = 400; 
+const paddingTop = 40;    // Espaço no topo para não cortar a linha de 100M
+const paddingBottom = 70; // Espaço na base para o "0" e os meses
+const paddingLeft = 110;  // Espaço para os números 100.000.000,00
+const paddingRight = 30;
+
+const maxYData = 50; // O topo (100M)
 
 const mesesFiltrados = computed(() => mesesLista.slice(mesInicio.value, parseInt(mesFim.value) + 1));
 
 const getX = (indexRelativo) => {
   const qtd = mesesFiltrados.value.length;
-  if (qtd <= 1) return larguraSVG / 2;
-  return paddingX + (indexRelativo * (larguraSVG - paddingX * 2) / (qtd - 1));
+  const areaUtilX = larguraSVG - paddingLeft - paddingRight;
+  return paddingLeft + (indexRelativo * areaUtilX / (qtd - 1));
 };
 
-const getY = (val) => (alturaSVG - paddingY) - (val / maxY * (alturaSVG - paddingY * 2));
+const getY = (val) => {
+  const areaUtilY = alturaSVG - paddingTop - paddingBottom;
+  // O valor "0" ficará exatamente na linha do paddingBottom
+  return (alturaSVG - paddingBottom) - (val / maxYData * areaUtilY);
+};
 
 const gerarPontos = (nome) => {
   const valores = dadosVendasOriginal[nome].slice(mesInicio.value, parseInt(mesFim.value) + 1);
@@ -85,7 +91,6 @@ const vendaAnualData = [
 
 <template>
   <div class="pbi-dashboard">
-    <!-- FILTROS -->
     <header class="pbi-header">
       <div class="f-group"><span>SELECIONE A EMPRESA:</span> <select><option>TOTALENERGIES</option></select></div>
       <div class="f-group"><span>ANO:</span> <select><option>2025</option></select></div>
@@ -107,9 +112,7 @@ const vendaAnualData = [
     </header>
 
     <div class="pbi-content">
-      <!-- LINHA SUPERIOR RESTAURADA -->
       <div class="top-row">
-        <!-- KPIS DETALHADOS -->
         <div class="kpi-grid">
           <div class="pbi-card kpi-card" v-for="(k, i) in kpis" :key="i">
             <div class="kpi-inner">
@@ -128,7 +131,6 @@ const vendaAnualData = [
           </div>
         </div>
 
-        <!-- VENDA ANUAL (BARRAS) -->
         <div class="pbi-card side-chart">
           <div class="chart-header">VENDA ANUAL</div>
           <div class="venda-anual-bars">
@@ -140,7 +142,6 @@ const vendaAnualData = [
           </div>
         </div>
 
-        <!-- SEGMENTO (BARRAS) -->
         <div class="pbi-card side-chart">
           <div class="chart-header text-center">Vendas de Lubrificantes por Segmento</div>
           <div class="seg-viz">
@@ -158,7 +159,7 @@ const vendaAnualData = [
         </div>
       </div>
 
-      <!-- GRÁFICO INFERIOR (O NOVO INTERATIVO) -->
+      <!-- GRÁFICO INFERIOR CORRIGIDO -->
       <div class="pbi-card main-viz-card">
         <div class="chart-header-row">
           <span class="chart-title">Vendas de Lubrificantes por mês</span>
@@ -167,47 +168,55 @@ const vendaAnualData = [
                  class="leg-item" 
                  :class="{ 'inactive': !marcasAtivas.includes(marca.nome) }"
                  @click="toggleMarca(marca.nome)">
-              <span class="leg-line" :style="{ background: marca.cor }"></span>
-              <span class="leg-dot" :style="{ borderColor: marca.cor }"></span>
-              <span class="leg-text">{{ marca.nome }}</span>
+              <img :src="`/logos/lubrificantes/${marca.nome.toLowerCase()}.png`" 
+                   :alt="marca.nome" 
+                   class="brand-logo" />
             </div>
           </div>
         </div>
         
         <div class="main-viz-wrapper">
-          <svg class="svg-line-chart" :viewBox="`0 0 ${larguraSVG} ${alturaSVG}`" preserveAspectRatio="none">
-            <line v-for="n in 6" :key="n" 
-              :x1="paddingX" :y1="getY((n-1)*10)" :x2="larguraSVG - paddingX" :y2="getY((n-1)*10)" 
-              stroke="#eee" stroke-width="1" />
+          <svg class="svg-line-chart" :viewBox="`0 0 ${larguraSVG} ${alturaSVG}`" preserveAspectRatio="xMidYMid meet">
+            <!-- LINHAS DE GRADE (Y) -->
+            <line v-for="n in 6" :key="'grid'+n" 
+              :x1="paddingLeft" :y1="getY((n-1)*10)" :x2="larguraSVG - paddingRight" :y2="getY((n-1)*10)" 
+              stroke="#eeeeee" stroke-width="1" />
             
-            <text v-for="n in 6" :key="'ty'+n" :x="paddingX - 10" :y="getY((n-1)*10) + 4" text-anchor="end" class="svg-label">
-              {{ ((n-1)*100000).toLocaleString('pt-BR') }},00
+            <!-- LABELS DO EIXO Y (Garante o 0 até 100M) -->
+            <text v-for="n in 6" :key="'labelY'+n" 
+              :x="paddingLeft - 15" :y="getY((n-1)*10) + 4" 
+              text-anchor="end" class="svg-label">
+              {{ ((n-1)*20000000).toLocaleString('pt-BR') }},00
             </text>
 
-            <g v-for="marca in marcas" :key="marca.nome">
+            <!-- AS LINHAS DOS DADOS -->
+            <g v-for="marca in marcas" :key="'linegroup'+marca.nome">
               <g v-if="marcasAtivas.includes(marca.nome)">
-                <polyline :points="gerarPontos(marca.nome)" fill="none" :stroke="marca.cor" stroke-width="2.5" />
-                <circle v-for="(val, idx) in dadosVendasOriginal[marca.nome].slice(mesInicio, parseInt(mesFim) + 1)" :key="idx"
-                  :cx="getX(idx)" :cy="getY(val)" r="4" :fill="marca.cor" stroke="white" stroke-width="2" />
+                <polyline :points="gerarPontos(marca.nome)" fill="none" :stroke="marca.cor" stroke-width="3" stroke-linejoin="round" />
+                <circle v-for="(val, idx) in dadosVendasOriginal[marca.nome].slice(mesInicio, parseInt(mesFim) + 1)" :key="'dot'+idx"
+                  :cx="getX(idx)" :cy="getY(val)" r="4.5" :fill="marca.cor" stroke="white" stroke-width="1.5" />
               </g>
             </g>
 
-            <text v-for="(mes, i) in mesesFiltrados" :key="mes" :x="getX(i)" :y="alturaSVG - 10" text-anchor="middle" class="svg-label-x">
+            <!-- MESES (EIXO X) -->
+            <text v-for="(mes, i) in mesesFiltrados" :key="'labelX'+mes" 
+              :x="getX(i)" :y="alturaSVG - 25" 
+              text-anchor="middle" class="svg-label-x">
               {{ mes }}
             </text>
           </svg>
         </div>
       </div>
     </div>
+    
   </div>
 </template>
 
 <style scoped>
-/* Dashboard Base */
 .pbi-dashboard { background-color: #f3f3f3; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
 
-/* Filtros */
-.pbi-header { background: white; padding: 10px 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; font-size: 11px; font-weight: bold; border-bottom: 1px solid #ddd; z-index: 100; }
+/* Header e Filtros */
+.pbi-header { background: white; padding: 10px 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; font-size: 11px; font-weight: bold; border-bottom: 1px solid #ddd; }
 .f-group { display: flex; align-items: center; gap: 6px; }
 .f-group select { border: 1px solid #ccc; padding: 2px 5px; border-radius: 2px; }
 .pbi-tabs { border: 1px solid #ccc; border-radius: 2px; display: flex; }
@@ -215,53 +224,50 @@ const vendaAnualData = [
 .pbi-tabs button.active { background: #eee; color: #000; font-weight: bold; }
 .btn-pbi-red { background: #ff4d4d; color: white; border: none; padding: 6px 15px; border-radius: 6px; font-weight: bold; margin-left: auto; cursor: pointer; }
 
-/* Conteúdo */
-.pbi-content { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
-.top-row { display: grid; grid-template-columns: 3fr 1fr 1fr; gap: 12px; height: 35%; min-height: 220px; }
-.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 10px; }
+/* Layout Geral */
+.pbi-content { flex: 1; padding: 15px; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
+.top-row { display: grid; grid-template-columns: 3fr 1fr 1fr; gap: 15px; height: 30%; min-height: 200px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 12px; }
 
 .pbi-card { background: white; border-radius: 12px; border: 1px solid #e5e5e5; box-shadow: 0 2px 5px rgba(0,0,0,0.03); overflow: hidden; }
 
-/* KPI Styling */
-.kpi-card { padding: 10px; position: relative; }
+/* KPIs */
+.kpi-card { padding: 10px; }
 .kpi-inner { display: flex; justify-content: space-between; align-items: center; height: 100%; }
-.kpi-text { flex: 1; margin: 0 8px; }
-.kpi-label { font-size: 9px; font-weight: 800; color: #222; text-transform: uppercase; }
+.kpi-label { font-size: 9px; font-weight: 800; color: #444; text-transform: uppercase; }
 .kpi-val { font-size: 20px; font-weight: 800; color: #000; margin: 2px 0; }
-.kpi-sub { font-size: 10px; display: flex; align-items: center; gap: 4px; font-weight: 600; color: #666; }
-.pbi-dot { color: #228b22; font-size: 12px; }
+.kpi-sub { font-size: 10px; display: flex; align-items: center; gap: 4px; color: #666; font-weight: 600; }
+.pbi-dot { color: #228b22; }
 .pbi-perc { color: #228b22; }
 .kpi-icon.mirror { opacity: 0.05; transform: scaleX(-1); }
 
-/* Venda Anual e Segmento */
+/* Venda Anual */
 .side-chart { padding: 12px; display: flex; flex-direction: column; }
-.chart-header { font-size: 11px; font-weight: bold; color: #444; margin-bottom: 5px; }
-.venda-anual-bars { flex: 1; display: flex; align-items: flex-end; justify-content: space-between; padding: 10px 5px; }
+.chart-header { font-size: 11px; font-weight: bold; color: #444; margin-bottom: 8px; }
+.venda-anual-bars { flex: 1; display: flex; align-items: flex-end; justify-content: space-between; padding: 5px; }
 .va-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
-.va-bar { background-color: #f58220; width: 60%; border-radius: 2px 2px 0 0; min-width: 8px; }
-.va-bar.last-bar { background-color: #fcd5b5; }
-.va-txt { font-size: 8px; font-weight: bold; color: #333; margin-bottom: 3px; }
+.va-bar { background-color: #f58220; width: 60%; border-radius: 2px; min-width: 6px; }
+.va-txt { font-size: 8px; font-weight: bold; margin-bottom: 2px; }
 .va-year { font-size: 9px; color: #999; margin-top: 4px; }
+.seg-viz { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; }
 
-.seg-viz { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; padding-bottom: 5px; }
-.seg-bar-group { display: flex; flex-direction: column; align-items: center; }
+/* O GRÁFICO PRINCIPAL */
+.main-viz-card { flex: 1; display: flex; flex-direction: column; padding: 20px; }
+.chart-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.chart-title { font-size: 16px; font-weight: bold; color: #333; }
 
-/* Gráfico de Linhas Interativo */
-.main-viz-card { flex: 1; display: flex; flex-direction: column; padding: 15px; }
-.chart-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.chart-title { font-size: 14px; font-weight: bold; color: #333; }
+.pbi-line-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; max-width: 75%; }
+.leg-item { cursor: pointer; transition: 0.2s; }
+.leg-item.inactive { opacity: 0.15; filter: grayscale(1); }
+.brand-logo { height: 24px; width: auto; object-fit: contain; }
 
-.pbi-line-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; max-width: 70%; }
-.leg-item { display: flex; align-items: center; gap: 4px; cursor: pointer; transition: 0.2s; }
-.leg-item.inactive { opacity: 0.2; }
-.leg-line { width: 12px; height: 2px; }
-.leg-dot { width: 7px; height: 7px; border-radius: 50%; background: white; border: 2px solid; margin-left: -10px; }
-.leg-text { font-size: 9px; font-weight: bold; color: #666; text-transform: uppercase; }
+.main-viz-wrapper { flex: 1; position: relative; width: 100%; overflow: hidden; }
+.svg-line-chart { width: 100%; height: 100%; display: block; }
 
-.main-viz-wrapper { flex: 1; position: relative; width: 100%; }
-.svg-line-chart { width: 100%; height: 100%; overflow: visible; }
-.svg-label { font-size: 9px; fill: #999; }
-.svg-label-x { font-size: 10px; fill: #555; font-weight: bold; }
+.svg-label { font-size: 10px; fill: #888; font-weight: bold; }
+.svg-label-x { font-size: 12px; fill: #444; font-weight: 800; }
+
+.pbi-footer { text-align: center; padding: 10px; font-size: 11px; color: #777; background: white; border-top: 1px solid #eee; }
 
 .font-bold { font-weight: bold; }
 .text-center { text-align: center; }
