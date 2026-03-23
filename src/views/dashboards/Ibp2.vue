@@ -259,7 +259,7 @@ const vendaAnualData = [
 .pbi-line-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; max-width: 75%; }
 .leg-item { cursor: pointer; transition: 0.2s; }
 .leg-item.inactive { opacity: 0.15; filter: grayscale(1); }
-.brand-logo { height: 24px; width: auto; object-fit: contain; }
+.brand-logo { height: 64px; width: auto; object-fit: contain; }
 
 .main-viz-wrapper { flex: 1; position: relative; width: 100%; overflow: hidden; }
 .svg-line-chart { width: 100%; height: 100%; display: block; }
