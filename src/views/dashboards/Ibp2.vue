@@ -3,16 +3,16 @@ import { ref, computed } from 'vue';
 
 // --- DADOS DO GRÁFICO DE LINHAS (LUBRIFICANTES) ---
 const marcas = [
-  { nome: 'YPF', cor: '#00aaff' },
-  { nome: 'VIBRA', cor: '#1a237e' },
-  { nome: 'VALVOLINE', cor: '#ff6d00' },
-  { nome: 'TOTALENERGIES', cor: '#4a148c' },
-  { nome: 'RAIZEN', cor: '#d81b60' },
-  { nome: 'PETRONAS', cor: '#7e57c2' },
-  { nome: 'MOOVE', cor: '#fbc02d' },
-  { nome: 'LWART', cor: '#c62828' },
-  { nome: 'ICONIC', cor: '#006064' },
-  { nome: 'CASTROL', cor: '#2e7d32' }
+  { nome: 'YPF', cor: '#0070c0' },
+  { nome: 'VIBRA', cor: '#004415' },
+  { nome: 'VALVOLINE', cor: '#00acee' },
+  { nome: 'TOTALENERGIES', cor: '#ff0000' },
+  { nome: 'RAIZEN', cor: '#990093' },
+  { nome: 'PETRONAS', cor: '#00a19c' },
+  { nome: 'MOOVE', cor: '#85bd00' },
+  { nome: 'LWART', cor: '#006cb7' },
+  { nome: 'ICONIC', cor: '#ff511f' },
+  { nome: 'CASTROL', cor: '#f00023' }
 ];
 
 const mesesLista = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
