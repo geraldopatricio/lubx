@@ -10,6 +10,7 @@ import Ibp from '../views/dashboards/Ibp.vue';
 import Ibp2 from '../views/dashboards/Ibp2.vue';  
 import Oportunidades from '../views/dashboards/Oportunidades.vue';  
 import Oportunit from '../views/dashboards/Oportunit.vue';  
+import Cnae from '../views/dashboards/Cnae.vue';  
 import ResetPassword from '../views/ResetPassword.vue'; 
 import LubChat from '../views/LubChat.vue';
 import MenusPage from '../views/configuracoes/MenusPage.vue'; 
@@ -84,7 +85,13 @@ const router = createRouter({
       name: 'oportunit', 
       component: Oportunit, 
       meta: { requiresLayout: true } 
-    }, 
+    },  
+    { 
+      path: '/dashboards/cnae', 
+      name: 'cnae', 
+      component: Cnae, 
+      meta: { requiresLayout: true } 
+    },  
     { 
       path: '/lubchat', 
       name: 'lubchat', 
