@@ -1,810 +1,350 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
-import { Bar, Doughnut } from 'vue-chartjs';
+import { ref, computed, onMounted, watch, reactive } from 'vue';
+import axios from 'axios';
 import { 
-  Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, ArcElement, PointElement, LineElement 
-} from 'chart.js';
-
-// Plugin necessário para os valores aparecerem nos gráficos (como os Mi e %)
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-
-import { 
-  Car, Bike, Truck, Calculator, Info, RotateCcw, Filter, MapPin, 
-  ChevronDown, ChevronUp, MousePointer2, Eraser, List, ExternalLink, PieChart, LayoutDashboard, ArrowLeft 
+  Car, Bike, Truck, Calculator, Info, Filter, 
+  MapPin, Eraser, List, ExternalLink, ArrowLeft 
 } from 'lucide-vue-next'; 
-
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-// --- REGISTRO DO CHART.JS ---
-ChartJS.register(
-  CategoryScale, 
-  LinearScale, 
-  BarElement, 
-  ArcElement, 
-  PointElement, 
-  LineElement, 
-  Title, 
-  Tooltip, 
-  Legend, 
-  ChartDataLabels // Plugin para labels externos
-);
+// --- CONFIGURAÇÃO API ---
+const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
 
-// --- ESTADOS ---
+// --- ESTADOS REATIVOS ---
 const isLoading = ref(true);
 const selectedUF = ref('Todos');
-const selectedStateName = ref('');
 
-// Configuração do Simulador de Share (Sincronizado)
-const simuladorShare = ref({
-  venda: 50000,
-  meses: 3,
-  shareDesejado: 15.00
+const apiFilters = ref(null);
+const filters = reactive({
+    viscosidade: 'Todos',
+    api: 'Todos',
+    acea: 'Todos',
+    jaso: 'Todos',
+    basico: 'Todos',
+    tipoVeiculo: 'LEVE' 
 });
 
-const simuladorTrocas = ref({ leve: 1.0, pesada: 3.8, moto: 3.0 });
+const simuladorShare = reactive({
+  suaVendaAtualLitros: 1000,
+  mesesCorridos: 3,
+  shareDesejado: 15
+});
 
-// Funções de Reset (Ícones de Borracha)
-const resetVenda = () => simuladorShare.value.venda = 0;
-const resetMeses = () => simuladorShare.value.meses = 0;
+const overviewData = ref({ potencialConsumoLitrosAno: 0, suaVendaProjetada: 0, shareProjetado: 0, frotaEfetiva: 0 });
+const simuladorTrocasData = ref([]);
+const tableData = ref([]);
 
-// --- CONFIG GRÁFICOS ---
-
-// Opção global para desativar labels em gráficos que não precisam
-const chartOptionsBase = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    datalabels: { display: false }
-  }
+const stateNames = {
+  'AC': 'Acre', 'AL': 'Alagoas', 'AM': 'Amazonas', 'AP': 'Amapá', 'BA': 'Bahia', 'CE': 'Ceará', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo', 'GO': 'Goiás', 'MA': 'Maranhão', 'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais', 'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco', 'PI': 'Piauí', 'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte', 'RS': 'Rio Grande do Sul', 'RO': 'Rondônia', 'RR': 'Roraima', 'SC': 'Santa Catarina', 'SP': 'São Paulo', 'SE': 'Sergipe', 'TO': 'Tocantins'
 };
 
-// Gráfico de Rosca (Share x Oportunidade) com labels externos
-const doughnutData = {
-  labels: ['Sua Venda', 'Oportunidade'],
-  datasets: [{
-    data: [0.01, 99.99],
-    backgroundColor: ['#e97332', '#cbd5e1'],
-    borderWidth: 0,
-  }]
+// --- FUNÇÕES DE CARREGAMENTO ---
+
+const fetchInitialFilters = async () => {
+    try {
+        const res = await api.get('/filtros');
+        if (res.data && res.data.data) apiFilters.value = res.data.data;
+    } catch (e) { console.error("Erro filtros:", e); }
 };
 
-const doughnutOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  cutout: '60%',
-  layout: { padding: 30 },
-  plugins: {
-    legend: { display: false },
-    datalabels: {
-      display: true,
-      anchor: 'end',
-      align: 'end',
-      offset: 8,
-      color: '#666',
-      font: { size: 10, weight: 'bold' },
-      formatter: (val) => val.toString().replace('.', ',') + '%'
+const fetchDashboardData = async () => {
+    isLoading.value = true;
+    const ufParam = selectedUF.value === 'Todos' ? '' : selectedUF.value;
+    
+    // 1. Parâmetros restritos para Overview e Simulador (conforme exigência do backend)
+    const paramsBasicos = {
+        estado: ufParam,
+        tipoVeiculo: filters.tipoVeiculo
+    };
+
+    // 2. Parâmetros completos para a Tabela de Especificações
+    const paramsCompletos = { 
+        ...paramsBasicos,
+        ...filters,
+        suaVendaAtualLitros: simuladorShare.suaVendaAtualLitros,
+        mesesCorridos: simuladorShare.mesesCorridos,
+        shareDesejado: simuladorShare.shareDesejado
+    };
+
+    try {
+        const [resOverview, resSimulador, resSpecs] = await Promise.all([
+            // Envia apenas os 2 parâmetros permitidos
+            api.get('/overview', { params: paramsBasicos }).catch(() => ({ data: { data: null } })),
+            api.get('/simulador', { params: paramsBasicos }).catch(() => ({ data: { data: [] } })),
+            // Envia tudo para o detalhamento
+            api.get('/especificacoes', { params: paramsCompletos }).catch(() => ({ data: { data: { itens: [] } } }))
+        ]);
+
+        if (resOverview.data.data) overviewData.value = resOverview.data.data;
+        if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
+        if (resSpecs.data.data) tableData.value = resSpecs.data.data.itens || [];
+
+    } catch (e) {
+        console.error("Erro na integração:", e);
+    } finally {
+        isLoading.value = false;
+        if (map.value) map.value.resize();
     }
-  }
 };
 
-// Gráfico de Barras (Oportunidade por Viscosidade)
-const barData = {
-  labels: ['0W20', '0W30', '0W40', '10W30', '10W40'],
-  datasets: [
-    { label: 'Oportunidade', backgroundColor: '#cbd5e1', data: [30, 20, 10, 60, 45] },
-    { label: 'Sua Venda', backgroundColor: '#e97332', data: [5, 2, 1, 15, 8] }
-  ]
+const getIcon = (label) => {
+    const text = label?.toUpperCase() || '';
+    if (text.includes('LEVE')) return Car;
+    if (text.includes('PESADA')) return Truck;
+    if (text.includes('MOTO')) return Bike;
+    return Car;
 };
 
 // --- MAPA ---
 const mapContainer = ref(null);
 const map = ref(null);
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'SUA_CHAVE_AQUI';
 
-// --- DENTRO DO <script setup> ---
-
-
-// --- LÓGICA PARA A TABELA DE DETALHAMENTO ---
-const tableData = computed(() => {
-  // Lista baseada nas labels do gráfico de barras do seu código
-  const labels = ['0W20', '0W20 C5', '0W30 A3/B4', '0W30 A5/B5', '0W30 C2', '0W30 C3', '0W40', '0W40 A3/B4', '0W40 C3', '10W30', '10W30 O', '10W30 A3/B4', '10W30 E7', '10W30 E7/E9', '10W30 E9', '10W40', '10W40 O', '10W40 A3/B4', '10W40 A5/B5', '10W40 E6', '10W40 E7', '10W40 E7/E9', '10W40 E9', '10W50'];
-  const potencialMi = [15, 2, 1, 1, 5, 2, 1, 2, 1, 55, 3, 1, 1, 1, 1, 35, 2, 5, 2, 4, 28, 2, 12, 2];
-  
-  // Cálculo simples de share proporcional para o simulador
-  const totalPotencial = potencialMi.reduce((a, b) => a + b, 0) * 1000000;
-  const currentShare = simuladorShare.value.venda > 0 ? (simuladorShare.value.venda / totalPotencial) : 0;
-
-  return labels.map((label, index) => {
-    const pot = potencialMi[index] * 1000000;
-    const estVenda = pot * currentShare;
-    const gap = pot - estVenda;
-    return {
-      especificacao: label,
-      potencial: pot,
-      vendaEst: estVenda,
-      gap: gap > 0 ? gap : 0,
-      share: (currentShare * 100).toFixed(1) + '%'
-    };
-  });
-});
-
-const marketShareCalculado = computed(() => {
-  const potencialTotalAnual = 604442286; // Valor vindo do seu Overview
-  if (!simuladorShare.value.venda || !simuladorShare.value.meses || simuladorShare.value.meses <= 0) return '0.00';
-  
-  // Ajusta o potencial anual para o período de meses digitado
-  const potencialNoPeriodo = (potencialTotalAnual / 12) * simuladorShare.value.meses;
-  const share = (simuladorShare.value.venda / potencialNoPeriodo) * 100;
-  
-  return share.toFixed(2);
-});
-
-// 1. Atualize a lógica do onMounted para o Mapa com Hover
-onMounted(() => {
-  // Esta é a linha que você deve usar:
-  mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
-  
+const initMap = () => {
+  mapboxgl.accessToken = MAPBOX_TOKEN;
   map.value = new mapboxgl.Map({
     container: mapContainer.value,
     style: 'mapbox://styles/mapbox/light-v11',
-    center: [-52, -15],
-    zoom: 3,
-    attributionControl: false
+    center: [-52, -15], zoom: 2.8, attributionControl: false
   });
 
   map.value.on('load', () => {
-    // Adiciona a fonte dos estados
-    map.value.addSource('states', {
-      type: 'geojson',
-      data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson',
-      generateId: true // Necessário para o feature-state funcionar
-    });
-
-    // Camada de preenchimento (Fill)
-    map.value.addLayer({
-      id: 'states-fill',
-      type: 'fill',
-      source: 'states',
-      paint: {
-        'fill-color': '#e97332',
-        // Se o mouse estiver sobre (hover), opacidade 0.6, senão 0.1
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.6,
-          0.1
-        ]
-      }
-    });
-
-    // Camada de borda (Borders)
-    map.value.addLayer({
-      id: 'states-borders',
-      type: 'line',
-      source: 'states',
-      paint: {
-        'line-color': '#e97332',
-        'line-width': 1
-      }
-    });
-
-    let hoveredStateId = null;
-
-    // Lógica de Mouse Move para o destaque
-    map.value.on('mousemove', 'states-fill', (e) => {
-      if (e.features.length > 0) {
-        if (hoveredStateId !== null) {
-          map.value.setFeatureState(
-            { source: 'states', id: hoveredStateId },
-            { hover: false }
-          );
-        }
-        hoveredStateId = e.features[0].id;
-        map.value.setFeatureState(
-          { source: 'states', id: hoveredStateId },
-          { hover: true }
-        );
-        mapContainer.value.style.cursor = 'pointer';
-      }
-    });
-
-    // Lógica de Mouse Leave para resetar o destaque
-    map.value.on('mouseleave', 'states-fill', () => {
-      if (hoveredStateId !== null) {
-        map.value.setFeatureState(
-          { source: 'states', id: hoveredStateId },
-          { hover: false }
-        );
-      }
-      hoveredStateId = null;
-      mapContainer.value.style.cursor = '';
-    });
+    map.value.addSource('states', { type: 'geojson', data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson', generateId: true });
+    map.value.addLayer({ id: 'states-fill', type: 'fill', source: 'states', paint: { 'fill-color': '#e97332', 'fill-opacity': ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1] }});
+    map.value.addLayer({ id: 'states-borders', type: 'line', source: 'states', paint: { 'line-color': '#e97332', 'line-width': 1 }});
+    map.value.on('click', 'states-fill', (e) => { selectedUF.value = e.features[0].properties.sigla; });
   });
+};
 
-  setTimeout(() => { isLoading.value = false; }, 800);
+const updateMapHighlight = () => {
+    if(!map.value || !map.value.isStyleLoaded()) return;
+    map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
+};
+
+// --- CALCULADOS ---
+const marketShareCalculado = computed(() => {
+  if (!overviewData.value?.potencialConsumoLitrosAno || !simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return '0.00';
+  const potencialNoPeriodo = (overviewData.value.potencialConsumoLitrosAno / 12) * simuladorShare.mesesCorridos;
+  return ((simuladorShare.suaVendaAtualLitros / potencialNoPeriodo) * 100).toFixed(2);
 });
 
-// Formatação de números para exibição
-const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(Math.floor(v));
+// --- WATCHERS ---
+watch([selectedUF, filters], () => { updateMapHighlight(); fetchDashboardData(); });
+
+let debounceTimer = null;
+watch(simuladorShare, () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => fetchDashboardData(), 800);
+}, { deep: true });
+
+onMounted(async () => {
+    initMap();
+    await fetchInitialFilters();
+    await fetchDashboardData();
+});
+
+const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) : '0';
 </script>
 
 <template>
   <div class="dashboard-wrapper">
-    <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-4">
-      
-      <div v-for="f in ['VISCOSIDADE', 'API', 'ACEA', 'JASO', 'BÁSICO']" :key="f" class="filter-item">
-        <label>{{ f }}:</label>
-        <select class="form-select form-select-sm" style="width: auto; min-width: 100px;">
-          <option>Todos</option>
-        </select>
+    
+    <!-- BARRA SUPERIOR DE FILTROS -->
+    <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-3">
+      <div v-if="apiFilters" class="d-flex gap-3">
+        <div v-for="f in [{l:'VISCOSIDADE', k:'viscosidade'}, {l:'API', k:'api'}, {l:'ACEA', k:'acea'}, {l:'JASO', k:'jaso'}, {l:'BÁSICO', k:'basico'}]" :key="f.k" class="filter-item">
+            <label>{{ f.l }}:</label>
+            <select v-model="filters[f.k]" class="form-select form-select-sm">
+                <option value="Todos">Todos</option>
+                <option v-for="opt in apiFilters[f.k]" :key="opt" :value="opt">{{ opt }}</option>
+            </select>
+        </div>
       </div>
-      <button class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
+      <button @click="Object.keys(filters).forEach(k=>filters[k]='Todos'); filters.tipoVeiculo='LEVE'; selectedUF='Todos'" class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
     </div>
 
     <div class="main-content d-flex p-3 gap-3">
       
-      <!-- 2. SIDEBAR ESQUERDA -->
+      <!-- SIDEBAR -->
       <div class="sidebar d-flex flex-column gap-3">
-      
-        <!-- Card Filtros UF -->
         <div class="card border-0 shadow-sm p-3 rounded-4 bg-white">
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <Filter :size="18" class="text-dark" />
-                <h6 class="fw-bold m-0 uppercase">Filtros</h6>
-            </div>
-            
-            <div class="mb-3">
+            <h6 class="fw-bold mb-3 uppercase"><Filter :size="16" class="inline-block mr-1"/> Filtros</h6>
+            <div class="mb-3" v-if="apiFilters">
                 <label class="small fw-bold text-muted d-block mb-1">ESTADO</label>
-                <select class="form-select form-select-sm rounded-3">
-                <option>Todos</option>
+                <select v-model="selectedUF" class="form-select form-select-sm">
+                    <option value="Todos">Brasil Todo</option>
+                    <option v-for="uf in apiFilters.estados" :key="uf" :value="uf">{{ stateNames[uf] || uf }}</option>
                 </select>
             </div>
-
-            <div>
+            <div v-if="apiFilters">
               <label class="small fw-bold text-muted d-block mb-1">TIPO DE VEÍCULO</label>
-              <div class="btn-group w-100 shadow-sm" role="group">
-                  <button class="btn btn-vehicle-type active">
-                      <Car :size="18" class="mb-1" />
-                      <span class="btn-label">LEVE</span>
-                  </button>
-                  <button class="btn btn-vehicle-type">
-                      <Bike :size="18" class="mb-1" />
-                      <span class="btn-label">MOTO</span>
-                  </button>
-                  <button class="btn btn-vehicle-type">
-                      <Truck :size="18" class="mb-1" />
-                      <span class="btn-label">PESADA</span>
+              <div class="btn-group w-100">
+                  <button v-for="type in apiFilters.tipoVeiculo" :key="type.id" 
+                          @click="filters.tipoVeiculo = type.id" 
+                          class="btn btn-vehicle-type" 
+                          :class="{active: filters.tipoVeiculo === type.id}">
+                      <component :is="getIcon(type.id)" :size="18" />
+                      <span class="btn-label">{{ type.label }}</span>
                   </button>
               </div>
+            </div>
         </div>
-      </div>
 
         <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden" style="height: 250px;">
-    <div ref="mapContainer" class="w-100 h-100"></div>
-  </div>
+            <div ref="mapContainer" class="w-100 h-100"></div>
+        </div>
 
-
-
-            <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
-    
-            <!-- Header do Card -->
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="d-flex align-items-center gap-2">
-                    <Calculator :size="18" class="text-dark" />
-                    <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 11px;">Simulador de Share</h6>
-                </div>
-                <div class="d-flex gap-1">
-                    <div class="bg-white border rounded p-1"><Info :size="12" class="text-primary"/></div>
-                    <div class="bg-white border rounded p-1"><List :size="12" class="text-muted"/></div>
-                    <div class="bg-white border rounded p-1"><ExternalLink :size="12" class="text-muted"/></div>
-                </div>
-            </div>
-
-            <!-- Texto de Instrução 1 - Fonte Padronizada -->
-            <p class="text-muted mb-3" style="line-height: 1.2; font-size: 11px;">
-                Insira a <span style="color: #e67e22; font-weight: 800;">VENDA ATUAL</span> em litros e o 
-                <span style="color: #e67e22; font-weight: 800;">NÚMERO DE MESES CORRIDO</span> para projetar seu Market Share.
-            </p>
-
-            <!-- Linha com Venda e Meses Lado a Lado -->
-            <div class="row g-2 mb-3">
+        <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
+            <h6 class="fw-bold mb-2 uppercase" style="font-size: 11px;"><Calculator :size="16"/> Simulador de Share</h6>
+            <div class="row g-2 mb-3 mt-2">
                 <div class="col-8">
-                    <label class="fw-bold text-dark mb-1" style="font-size: 11px;">SUA VENDA</label>
+                    <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <input type="number" v-model="simuladorShare.venda" class="pbi-input-field">
+                        <input type="number" v-model="simuladorShare.suaVendaAtualLitros" class="pbi-input-field">
                     </div>
                 </div>
                 <div class="col-4">
-                    <label class="fw-bold text-dark mb-1" style="font-size: 11px;">MESES</label>
-                    <input type="number" v-model="simuladorShare.meses" class="form-control form-control-sm fw-bold" style="height: 32px; font-size: 12px;">
+                    <label class="fw-bold small">MESES</label>
+                    <input type="number" v-model="simuladorShare.mesesCorridos" class="form-control form-control-sm fw-bold">
                 </div>
             </div>
-
-            <!-- Campo SHARE DESEJADO -->
-            <div class="mb-1">
-            <!-- NOVA LINHA: Market Share calculado em tempo real -->
-            <div class="d-flex align-items-center justify-content-between mb-3 mt-2">
-                <span class="fw-bold text-dark" style="font-size: 11px; letter-spacing: 0.5px;">MARKET SHARE:</span>
-                <div class="bg-white border rounded-pill px-3 py-1 shadow-sm d-flex align-items-center">
-                    <span class="fw-black text-dark" style="font-size: 14px;">{{ marketShareCalculado }}%</span>
-                </div>
+            <div class="d-flex align-items-center justify-content-between mb-3 bg-white p-2 rounded-3 border">
+                <span class="fw-bold small">MARKET SHARE:</span>
+                <span class="fw-black text-orange fs-5">{{ marketShareCalculado }}%</span>
             </div>
-
-            <!-- Texto de Instrução 2 -->
-            <p class="text-muted mb-2" style="line-height: 1.2; font-size: 11px;">
-                Insira <span style="color: #e67e22; font-weight: 800;">SHARE DESEJADO</span> para projetar seu Market Share desejado.
-            </p>
-            
-            <!-- Box de Valor Centralizado -->
-            <div class="bg-white border rounded p-1 mb-2 d-flex align-items-center justify-content-center" style="height: 45px;">
-                <input type="number" 
-                        v-model.number="simuladorShare.shareDesejado" 
-                        class="form-control form-control-sm fw-bold border-0 text-center" style="font-size: 16px;">
+            <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
+            <div class="bg-white border rounded p-1 d-flex align-items-center">
+                <input type="number" v-model="simuladorShare.shareDesejado" class="form-control border-0 text-center fw-bold fs-4">
                 <span class="fw-bold fs-5 pe-2">%</span>
             </div>
         </div>
-        </div>
-
-
-        
-
       </div>
 
-      <!-- 3. PAINEL CENTRAL / DIREITO -->
+      <!-- PAINEL CENTRAL -->
       <div class="content-grid flex-grow-1 d-flex flex-column gap-3">
         
-        <!-- Linha Superior -->
         <div class="row g-3">
-          <!-- Simulador de Trocas -->
+          <!-- CARD: Simulador de Trocas Anual por Tipo de Veículo -->
           <div class="col-lg-8">
-            <!-- SIMULADOR DE TROCAS ANUAL POR TIPO DE VEÍCULO -->
-            <div class="card border-0 shadow-sm p-4 rounded-4 bg-white ">
-            <div class="d-flex align-items-center gap-2 mb-2">
-                <Calculator :size="18" class="text-dark" />
-                <h6 class="fw-bold m-0 uppercase" style="color: #1a2332;">Simulador de Trocas Anual por Tipo de Veículo</h6>
-            </div>
-            
-            <p class="text-muted mb-4" style="font-size: 11px; line-height: 1.4;">
-                Insira ou arraste o slice com a quantidade de trocas de óleo por ano de acordo com o tipo de veículos para estimar o potencial de consumo anual de acordo com a frota eletiva.
-            </p>
-
-            <div class="row g-0">
-                <!-- Linha Leve -->
-                <div class="col-4 border-end px-3">
-                <div class="d-flex align-items-center gap-3 mb-3">
-                    <Car class="text-orange" :size="48" />
-                    <div>
-                    <div class="fw-bold fs-5 text-dark">58.687.607</div>
-                    <div class="text-muted smaller fw-medium">Veículos</div>
-                    </div>
+            <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100">
+                <div class="px-2 mb-3">
+                    <h6 class="fw-bold m-0 uppercase text-muted" style="font-size: 12px;">Simulador de Trocas Anual por Tipo de Veículo</h6>
                 </div>
-                <div class="mb-4">
-                    <div class="fw-bold fs-5 text-dark">229.911.597,38</div>
-                    <div class="text-muted smaller fw-medium">Litros / ano</div>
-                </div>
-                <div class="border-top pt-3">
-                    <label class="smaller text-muted d-block mb-1 fw-bold">Trocas por Ano</label>
-                    <input type="text" class="form-control form-control-sm border-light-subtle bg-light-subtle" style="width: 85px" value="1,0">
-                </div>
-                </div>
-
-                <!-- Linha Pesada -->
-                <div class="col-4 border-end px-3">
-                <div class="d-flex align-items-center gap-3 mb-3">
-                    <Truck class="text-orange" :size="48" />
-                    <div>
-                    <div class="fw-bold fs-5 text-dark">3.797.561</div>
-                    <div class="text-muted smaller fw-medium">Veículos</div>
-                    </div>
-                </div>
-                <div class="mb-4">
-                    <div class="fw-bold fs-5 text-dark">269.004.060,74</div>
-                    <div class="text-muted smaller fw-medium">Litros / ano</div>
-                </div>
-                <div class="border-top pt-3">
-                    <label class="smaller text-muted d-block mb-1 fw-bold">Trocas por Ano</label>
-                    <input type="text" class="form-control form-control-sm border-light-subtle bg-light-subtle" style="width: 85px" value="3,8">
-                </div>
-                </div>
-
-                <!-- Linha Moto -->
-                <div class="col-4 px-3">
-                <div class="d-flex align-items-center gap-3 mb-3">
-                    <Bike class="text-orange" :size="48" />
-                    <div>
-                    <div class="fw-bold fs-5 text-dark">34.307.995</div>
-                    <div class="text-muted smaller fw-medium">Veículos</div>
-                    </div>
-                </div>
-                <div class="mb-4">
-                    <div class="fw-bold fs-5 text-dark">105.526.627,98</div>
-                    <div class="text-muted smaller fw-medium">Litros / ano</div>
-                </div>
-                <div class="border-top pt-3">
-                    <label class="smaller text-muted d-block mb-1 fw-bold">Trocas por Ano</label>
-                    <input type="text" class="form-control form-control-sm border-light-subtle bg-light-subtle" style="width: 85px" value="3,0">
-                </div>
-                </div>
-            </div>
-
-            <div class="mt-4 d-flex align-items-start gap-2">
-                <Info :size="14" class="text-muted" />
-                <p class="smaller text-muted m-0" style="line-height: 1.4;">
-                A litragem total apresentada está alinhada com a estimativa média nacional de trocas de óleo por segmento.
-                </p>
-            </div>
-            </div>
-          </div>
-
-          
-        <!-- OVERVIEW (CARD BIPARTIDO: AZUL E LARANJA) -->
-          <div class="col-lg-4">
-            <div class="card border-0 shadow-sm rounded-4 overview-card text-white d-flex flex-column overflow-hidden" style="background-color: #1a2332;">
-              
-              <!-- PARTE SUPERIOR (AZUL ESCURO) -->
-              <div class="p-3 flex-grow-1">
-                <div class="d-flex align-items-center gap-2">
-                  <Calculator :size="20" class="text-white" />
-                  <h6 class="fw-bold m-0 uppercase" style="letter-spacing: 1px; font-size: 14px;">OVERVIEW</h6>
-                </div>
-
-                <div class="mb-4">
-                  <p class="mb-1 fw-bold opacity-75" style="color: #cbd5e1; font-size: 14px;">Potencial de Consumo (L / Ano)</p>
-                  <h1 class="fw-bold m-0" style="font-size: 34px; letter-spacing: -1px;">604.442.286</h1>
-                </div>
-
-                <div class="mb-0">
-                  <h3 class="fw-bold m-0" style="font-size: 26px;">0</h3>
-                  <p class="mb-0 fw-bold opacity-75" style="color: #cbd5e1; font-size: 12px; margin-top: 4px;">Sua Venda Projetada</p>
-                </div>
-              </div>
-
-              <!-- PARTE INFERIOR (LARANJA #e97332) -->
-              <div class="p-3" style="background-color: #e97332;">
-                <div class="mb-4">
-                  <h3 class="fw-bold m-0" style="font-size: 26px;">0,00%</h3>
-                  <p class="mb-0 fw-bold text-white opacity-100" style="font-size: 12px; margin-top: 4px;">Share Projetado</p>
-                </div>
-
-                <div class="mt-auto">
-                  <h2 class="fw-bold m-0" style="font-size: 30px;">96.793.163</h2>
-                  <p class="mb-0 fw-bold text-white opacity-100" style="font-size: 13px; margin-top: 5px;">Frota Eletiva</p>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-
-        </div>
-
-        <!-- Linha Inferior -->
-        <div class="row g-3 flex-grow-1">
-          
-
-        <!-- TABELA DE DETALHAMENTO (DATAGRID) -->
-        <div class="row g-2 mt-1">
-
-          <div class="col-12">
-            <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
-              <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold m-0 uppercase" style="color: #1a2332; font-size: 14px;">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
-                <span class="badge rounded-pill bg-light text-dark border px-3">{{ tableData.length }} Registros</span>
-              </div>
-              
-              <div class="table-responsive" style="max-height: 400px;">
-                <table class="table table-hover align-middle mb-0">
-                  <thead class="sticky-top bg-white" style="z-index: 10;">
-                    <tr class="border-bottom">
-                      <th class="ps-4 py-3 text-muted fw-bold small">ESPECIFICAÇÃO</th>
-                      <th class="text-end py-3 text-muted fw-bold small">POTENCIAL (L)</th>
-                      <th class="text-end py-3 text-orange fw-bold small" style="width: 180px;">SUA VENDA (EST.)</th>
-                      <th class="text-end py-3 text-muted fw-bold small">GAP (LITROS)</th>
-                      <th class="text-end pe-4 py-3 text-muted fw-bold small">SHARE</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(row, idx) in tableData" :key="idx" class="border-bottom">
-                      <td class="ps-4 fw-bold text-dark">{{ row.especificacao }}</td>
-                      <td class="text-end fw-bold">{{ fmtNum(row.potencial) }}</td>
-                      <td class="text-end">
-                        <div class="d-flex justify-content-end">
-                          <input type="text" 
-                                 class="form-control form-control-sm text-end fw-bold border-orange-subtle bg-white" 
-                                 style="max-width: 100px; color: #e97332;"
-                                 :value="Math.floor(row.vendaEst)">
+                <div class="row g-0 align-items-center" v-if="simuladorTrocasData && simuladorTrocasData.length">
+                    <div v-for="(s, idx) in simuladorTrocasData" :key="idx" class="col-4 px-4" :class="{'border-end': idx < 2}">
+                        <div class="d-flex align-items-center gap-3 mb-4">
+                            <component :is="getIcon(s.tipoVeiculo)" class="text-orange" :size="48" />
+                            <div class="lh-1">
+                                <div class="fw-bold fs-4">{{ fmtNum(s.veiculos) }}</div>
+                                <small class="text-muted fw-bold" style="font-size: 11px;">Veículos</small>
+                            </div>
                         </div>
-                      </td>
-                      <td class="text-end text-muted">{{ fmtNum(row.gap) }}</td>
-                      <td class="text-end pe-4">
-                        <span class="badge bg-light text-dark border fw-bold" style="font-size: 11px;">{{ row.share }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                        <div class="mb-4 pt-3 border-top">
+                            <div class="fw-bold fs-4">{{ fmtNum(s.litrosAno) }}</div>
+                            <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
+                        </div>
+                        <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
+                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas por Ano</small>
+                            <div class="d-flex align-items-center justify-content-center gap-2">
+                                <input type="text" class="form-control form-control-sm text-center fw-bold bg-white border-0" style="width: 55px; height: 30px;" :value="s.trocasPorAno" readonly>
+                                <Info :size="16" class="text-muted" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="text-center p-5 text-muted">Nenhum dado de frota disponível para este filtro.</div>
+                <div class="mt-4 px-2 d-flex gap-2 align-items-center">
+                    <Info :size="14" class="text-muted"/>
+                    <small class="text-muted" style="font-size:9px">A quantidade de trocas apresentada, representa uma estimativa baseada na média nacional.</small>
+                </div>
+            </div>
+          </div>
+
+          <!-- CARD OVERVIEW -->
+          <div class="col-lg-4">
+            <div class="card border-0 shadow-sm rounded-4 overview-card text-white d-flex flex-column overflow-hidden h-100" style="background-color: #1a2332;">
+              <div class="p-3 flex-grow-1">
+                <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
+                <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
+                <div class="mt-3">
+                  <h3 class="fw-bold m-0">{{ fmtNum(simuladorShare.suaVendaAtualLitros) }}</h3>
+                  <p class="mb-0 small opacity-75">Sua Venda Projetada</p>
+                </div>
+              </div>
+              <div class="p-3" style="background-color: #e97332;">
+                <h3 class="fw-bold m-0">{{ marketShareCalculado }}%</h3>
+                <p class="mb-3 small">Share Projetado</p>
+                <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
+                <p class="mb-0 small">Frota Eletiva</p>
               </div>
             </div>
           </div>
         </div>
 
+        <!-- TABELA DE ESPECIFICAÇÕES -->
+        <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden flex-grow-1">
+            <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold m-0 uppercase">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
+                <span class="badge rounded-pill bg-light text-dark border px-3">{{ tableData.length }} Registros</span>
+            </div>
+            <div class="table-responsive" style="max-height: 500px;">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="sticky-top bg-white border-bottom shadow-sm">
+                        <tr>
+                            <th class="ps-4 py-3 text-muted fw-bold small">ESPECIFICAÇÃO</th>
+                            <th class="text-end py-3 text-muted fw-bold small">POTENCIAL (L)</th>
+                            <th class="text-end py-3 text-orange fw-bold small" style="width: 180px;">SUA VENDA (EST.)</th>
+                            <th class="text-end py-3 text-muted fw-bold small">GAP (LITROS)</th>
+                            <th class="text-end pe-4 py-3 text-muted fw-bold small">SHARE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(row, idx) in tableData" :key="idx" class="border-bottom">
+                            <td class="ps-4 fw-bold text-dark small">{{ row.especificacao }}</td>
+                            <td class="text-end fw-bold">{{ fmtNum(row.potencialLitros) }}</td>
+                            <td class="text-end">
+                                <div class="d-flex justify-content-end">
+                                    <input type="number" v-model.number="row.suaVendaEstimada" class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" style="max-width: 110px;">
+                                </div>
+                            </td>
+                            <td class="text-end text-muted">{{ fmtNum(row.gapLitros) }}</td>
+                            <td class="text-end pe-4"><span class="badge bg-light text-dark border">{{ row.share }}%</span></td>
+                        </tr>
+                        <tr v-if="tableData.length === 0 && !isLoading">
+                            <td colspan="5" class="text-center p-5 text-muted">Nenhum dado detalhado encontrado para estes filtros.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
-
       </div>
     </div>
+    
+    <div v-if="isLoading" class="loader-global"><div class="spinner-border text-orange"></div></div>
   </div>
 </template>
 
 <style scoped>
-.dashboard-wrapper {
-  background-color: #f1f5f9;
-  height: 120vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  font-family: 'Inter', sans-serif;
-}
-
-.uppercase { text-transform: uppercase; letter-spacing: 0.5px; font-size: 13px; }
-.smaller { font-size: 10px; }
-.text-orange { color: #e97332 !important; }
-.bg-white { background-color: #ffffff; }
-
-/* BARRA SUPERIOR */
-.top-filter-bar { height: 60px; z-index: 100; }
-
-
-.filter-item { 
-  display: flex; 
-  align-items: center; /* Alinha verticalmente no centro */
-  gap: 8px;            /* Espaço entre o título e o select */
-}
-.filter-item label { 
-  font-size: 9px; 
-  font-weight: 800; 
-  color: #334155; 
-  white-space: nowrap; /* Impede que o texto quebre linha */
-  margin-bottom: 0;    /* Remove margem inferior que empurra o select */
-}
-
-
-.form-select-sm { padding: 0.1rem 1.5rem 0.1rem 0.5rem; font-size: 11px; }
-.btn-red-total { background-color: #ff0000; color: white; border: none; }
-
-/* SIDEBAR */
+.dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
+.top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
+.filter-item { display: flex; align-items: center; gap: 8px; }
+.filter-item label { font-size: 9px; font-weight: 800; color: #334155; white-space: nowrap; }
 .sidebar { width: 300px; flex-shrink: 0; }
-.simulator-card { 
-  background: linear-gradient(135deg, #fff3e6 0%, #ffe9cc 100%); 
-  border-left: 5px solid #e97332 !important;
-}
+.content-grid { overflow-y: auto; padding-bottom: 60px; }
+.btn-vehicle-type { border: 1px solid #dee2e6; background: #fff; color: #6c757d; flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 0; transition: 0.2s; }
+.btn-vehicle-type.active { background-color: #e97332 !important; border-color: #e97332 !important; color: white !important; }
+.btn-label { font-size: 9px; font-weight: 700; margin-top: 4px; }
+.simulator-card-total { background-color: #fff5e6; border: 1px solid #f1c40f !important; }
+.pbi-input-custom { display: flex; align-items: center; background: white; border: 1px solid #dee2e6; border-radius: 50px; overflow: hidden; height: 32px; }
+.pbi-input-label { background: #f8fafc; color: #1a2332; font-weight: 800; font-size: 10px; padding: 0 10px; border-right: 1px solid #dee2e6; }
+.pbi-input-field { border: none; flex: 1; padding: 0 8px; font-size: 12px; font-weight: 700; outline: none; background: transparent; }
+.loader-global { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.7); display:flex; align-items:center; justify-content:center; z-index: 9999; }
+.uppercase { text-transform: uppercase; letter-spacing: 0.5px; }
+.text-orange { color: #e97332 !important; }
+.border-orange-subtle { border-color: #fbd6c0 !important; }
+.btn-red-total { background-color: #ff0000; color: white; border: none; font-size: 11px; }
 
-/* CONTENT GRID */
-.content-grid { 
-    overflow-y: auto; 
-    overflow-x: hidden; /* Isso remove a barra horizontal indesejada */
-    padding-right: 8px; /* Espaço para a barra vertical não colar no card */
-    width: 100%;
-    padding-bottom: 100px !important;
-}
-
-.table-responsive {
-    max-height: 500px; /* Você pode aumentar um pouco se desejar */
-    overflow-y: auto;
-}
-
-.troca-input { width: 80px; }
-.chart-center-text {
-  position: absolute;
-  top: 55%; left: 50%;
-  transform: translate(-50%, -50%);
-  font-weight: 800; font-size: 16px;
-}
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.dot.orange { background: #e97332; }
-.dot.grey { background: #cbd5e1; }
-
-.overview-card { background-color: #1a2332; }
-.fw-black { font-weight: 900; }
-
-/* CUSTOM RANGE */
-.custom-range::-webkit-slider-thumb { background: #e97332; }
-
-@media (max-width: 1400px) {
-  .dashboard-wrapper { overflow-y: auto; height: auto; }
-  .main-content { flex-direction: column; }
-  .sidebar { width: 100%; }
-}
-
-/* Estilo do Card Simulador */
-.simulator-card-total {
-  background-color: #fff5e6; /* Amarelo bem claro do print */
-  border: 1px solid #f1c40f !important; /* Borda amarela fina */
-}
-
-/* Estilo dos Inputs Estilo PBI */
-.pbi-input-container {
-  border: 1px solid #ccc;
-  background: white;
-  border-radius: 4px;
-}
-
-.pbi-input {
-  height: 45px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-weight: 600;
-}
-
-.pbi-input-small {
-  width: 100px;
-  height: 35px;
-  border: 1px solid #ccc;
-}
-
-/* Ícones de ação dentro do input */
-.input-actions-pbi {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: white;
-  padding-left: 5px;
-}
-
-.pbi-icon-action {
-  color: #666;
-  cursor: pointer;
-}
-.pbi-icon-action:hover { color: #e67e22; }
-
-.pbi-icon-step {
-  cursor: pointer;
-  color: #333;
-}
-
-/* Estilo do Slider (Bolinha Branca com Borda) */
-.pbi-slider {
-  -webkit-appearance: none;
-  height: 4px;
-  background: #ddd;
-  border-radius: 5px;
-}
-
-.pbi-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 24px;
-  height: 24px;
-  background: white;
-  border: 2px solid #555;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.cursor-pointer { cursor: pointer; }
-.uppercase { text-transform: uppercase; }
-
-/* Botões de visualização no topo do card */
-.btn-chart-view {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
-  background: white;
-}
-
-.btn-chart-view.active {
-  background: #f8fafc;
-  color: #1a2332;
-  border-color: #cbd5e1;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
-}
-
-
-
-.btn-vehicle-type {
-    border: 1px solid #dee2e6;
-    background-color: #fff;
-    color: #6c757d;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 8px 0;
-    width: 100%;
-    transition: all 0.2s;
-}
-
-/* Estado Ativo com a cor solicitada */
-.btn-vehicle-type.active {
-    background-color: #e97332 !important;
-    border-color: #e97332 !important;
-    color: white !important;
-}
-
-.btn-vehicle-type:hover:not(.active) {
-    background-color: #fff1eb;
-    color: #e97332;
-}
-
-.btn-label {
-    font-size: 9px;
-    font-weight: 700;
-}
-
-.table-responsive table th { 
-    font-size: 10px !important; 
-    padding-top: 8px !important; 
-    padding-bottom: 8px !important; 
-}
-
-.table-responsive table td { 
-    font-size: 11px !important; 
-    padding-top: 4px !important; 
-    padding-bottom: 4px !important; 
-}
-
-/* Ajuste do input dentro da tabela para acompanhar a fonte */
-.table-responsive .form-control-sm { 
-    font-size: 11px !important; 
-    height: 25px !important; 
-}
-
-
-/* Estilo Customizado para o Input com prefixo Lts */
-.pbi-input-custom {
-  display: flex;
-  align-items: center;
-  background: white;
-  border: 1px solid #dee2e6;
-  border-radius: 50px; /* Formato de pílula/arredondado */
-  overflow: hidden;
-  height: 32px;
-  transition: all 0.2s ease-in-out;
-}
-
-/* Efeito de foco (borda laranja igual ao seu print) */
-.pbi-input-custom:focus-within {
-  border-color: #e97332;
-  box-shadow: 0 0 0 3px rgba(233, 115, 50, 0.15);
-}
-
-.pbi-input-label {
-  background-color: #f8fafc;
-  color: #1a2332;
-  font-weight: 800;
-  font-size: 11px;
-  padding: 0 12px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  border-right: 1px solid #dee2e6;
-}
-
-.pbi-input-field {
-  border: none;
-  flex: 1;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #334155;
-  outline: none;
-  background: transparent;
-}
-
-/* Remove as setinhas padrão do campo de número para ficar mais limpo */
-.pbi-input-field::-webkit-inner-spin-button,
-.pbi-input-field::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
+input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
