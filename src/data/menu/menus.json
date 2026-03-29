@@ -8,13 +8,8 @@
     "ordem": 1,
     "tipo": "grupo",
     "submenus": [
-      { "id": 2, "titulo": "Região", "rota": "/dashboards/frotas", "ordem": 1 },
-      { "id": 3, "titulo": "Região 2", "rota": "/", "ordem": 1 },
-      { "id": 4, "titulo": "Oportunidades", "rota": "/dashboards/oportunidades", "ordem": 1 },
-      { "id": 5, "titulo": "Oportunidades 2", "rota": "/dashboards/oportunit", "ordem": 1 },
-      { "id": 6, "titulo": "IBP", "rota": "/dashboards/ibp", "ordem": 1 },
-      { "id": 7, "titulo": "IBP 2", "rota": "/dashboards/ibp2", "ordem": 1 },
-      { "id": 8, "titulo": "CNAE", "rota": "/dashboards/cnae", "ordem": 1 }
+      { "id": 2, "titulo": "Região", "rota": "/", "ordem": 1 },
+      { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 }
     ]
   },
   {
