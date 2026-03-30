@@ -9,8 +9,7 @@
     "tipo": "grupo",
     "submenus": [
       { "id": 2, "titulo": "Região", "rota": "/", "ordem": 1 },
-      { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 },
-      { "id": 4, "titulo": "Marcas", "rota": "/dashboards/marcas", "ordem": 1 }
+      { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 }
     ]
   },
   {
