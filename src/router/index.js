@@ -6,6 +6,7 @@ import Login from '../views/Login.vue'
 import Usuarios from '../views/cadastros/Usuarios.vue'; 
 import Acesso from '../views/cadastros/Acesso.vue';  
 import Frotas from '../views/dashboards/Frotas.vue';  
+import Marcas from '../views/dashboards/Marcas.vue';  
 import Ibp from '../views/dashboards/Ibp.vue';  
 import Ibp2 from '../views/dashboards/Ibp2.vue';  
 import Oportunidades from '../views/dashboards/Oportunidades.vue';  
@@ -90,6 +91,12 @@ const router = createRouter({
       path: '/dashboards/cnae', 
       name: 'cnae', 
       component: Cnae, 
+      meta: { requiresLayout: true } 
+    },   
+    { 
+      path: '/dashboards/marcas', 
+      name: 'marca', 
+      component: Marcas, 
       meta: { requiresLayout: true } 
     },  
     { 
