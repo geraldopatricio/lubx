@@ -9,7 +9,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-const api = axios.create({ baseURL: 'https://masadwnegb.us-east-1.awsapprunner.com/bi/oportunidades', timeout: 60000 });
+const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
 
 // --- ESTADOS REATIVOS ---
 const isLoading = ref(true);
