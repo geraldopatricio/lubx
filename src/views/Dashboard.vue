@@ -13,7 +13,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-const api = axios.create({ baseURL: 'https://masadwnegb.us-east-1.awsapprunner.com/bi/regiao-2', timeout: 20000 });
+const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
 
 ChartJS.register(
     CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
