@@ -172,7 +172,13 @@ const chartViscosidade = computed(() => {
                 data: items.map(i => { acc += i.litros; return ((acc / total) * 100).toFixed(2); }), 
                 yAxisID: 'y1', 
                 tension: 0.2,
-                datalabels: { align: 'top', anchor: 'end', offset: 2 } // Adicionado aqui
+                datalabels: { 
+                    align: 'top', 
+                    anchor: 'end', 
+                    offset: -4, // Distância maior para "subir" o número da linha
+                    font: { weight: 'bold', size: 9 },
+                    color: '#000' // Cor opcional para combinar com a linha
+                } 
             },
             { 
                 type: 'bar', 
@@ -316,7 +322,43 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                 </div>
 
                 <div class="row g-2">
-                    <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;"><Bar :data="chartViscosidade" :options="{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, y1: { position:'right', grid:{display:false} } } }" /></div></div></div>
+                    <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;">
+                    <div style="height: 220px;">
+                    <Bar 
+                        :data="chartViscosidade" 
+                        :options="{ 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                            top: 20 // Espaço extra para os valores não baterem no topo
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                            display: true,
+                            position: 'top',
+                            align: 'start', // Alinha a legenda à ESQUERDA
+                            labels: {
+                                boxWidth: 12,
+                                font: { size: 10 }
+                            }
+                            },
+                            // Mantendo os valores acima das barras/linhas conforme solicitado antes
+                            datalabels: {
+                            anchor: 'end',
+                            align: 'top',
+                            offset: 2,
+                            font: { weight: 'bold', size: 10 }
+                            }
+                        },
+                        scales: { 
+                            y: { beginAtZero: true }, 
+                            y1: { position: 'right', grid: { display: false }, min: 0, max: 110 } 
+                        } 
+                        }" 
+                    />
+                    </div></div></div></div>
                     <div class="col-md-7"><div class="row g-2 h-100">
                         <div class="col-4">
                             <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
