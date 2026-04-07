@@ -13,8 +13,58 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
-// const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
+// const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
+const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
+
+// Plugin customizado para desenhar as linhas (Leader Lines)
+const doughnutLabelsLine = {
+  id: 'doughnutLabelsLine',
+  afterDraw(chart) {
+    // Só executa se for gráfico de rosca e se datalabels estiver ativo
+    if (chart.config.type !== 'doughnut' && chart.config.type !== 'pie') return;
+
+    const { ctx } = chart;
+    chart.data.datasets.forEach((dataset, i) => {
+      chart.getDatasetMeta(i).data.forEach((datapoint, index) => {
+        const { x, y, startAngle, endAngle, outerRadius } = datapoint;
+        const midAngle = startAngle + (endAngle - startAngle) / 2;
+
+        // Lógica para não desenhar linha em labels ocultos (fatias pequenas nas Normas)
+        const realData = dataset.realData || dataset.data;
+        const total = realData.reduce((a, b) => a + b, 0);
+        if (total === 0) return;
+        const val = realData[index];
+        
+        // Se o formatter do datalabels retornaria null, não desenhamos a linha
+        if (chart.options.plugins.datalabels.display && (val/total) < 0.04 && chart.canvas.id.includes('norma')) {
+           // Nota: O ID depende de como o Chart.js identifica o componente, 
+           // na dúvida, ele desenhará para todos os que têm label visível.
+        }
+
+        const x1 = x + Math.cos(midAngle) * outerRadius;
+        const y1 = y + Math.sin(midAngle) * outerRadius;
+        const x2 = x + Math.cos(midAngle) * (outerRadius + 15); // Aumentei um pouco a linha
+        const y2 = y + Math.sin(midAngle) * (outerRadius + 15);
+
+        ctx.strokeStyle = '#D1D5DB'; // Cinza suave
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      });
+    });
+  }
+};
+
+// REGISTRE O PLUGIN AQUI
+ChartJS.register(
+    CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
+    PointElement, LineElement, BarController, LineController, Title, Tooltip, Legend, ChartDataLabels,
+    doughnutLabelsLine // <--- Adicione ele aqui
+);
+
+
 
 ChartJS.register(
     CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
@@ -119,20 +169,67 @@ const normasChartData = computed(() => {
 });
 
 const getDoughnutOptions = (key) => ({
-    responsive: true, maintainAspectRatio: false,
-    onClick: (e, el) => handleChartClick(e, el, key),
-    plugins: {
-        legend: { display: true, position: 'bottom', labels: { boxWidth: 8, padding: 8, font: { size: 9 }, filter: (item) => item.text !== 'Não informado' } },
-        datalabels: {
-            color: '#444', font: { size: 9, weight: 'bold' },
-            formatter: (v, ctx) => {
-                const real = ctx.dataset.realData ? ctx.dataset.realData[ctx.dataIndex] : v;
-                const total = (ctx.dataset.realData || ctx.dataset.data).reduce((a, b) => a + b, 0);
-                return total > 0 ? ((real/total)*100).toFixed(2)+'%' : '0%';
-            }
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+        padding: {
+            top: 5,
+            bottom: 5, // <-- Aumentamos muito o fundo para empurrar o gráfico para cima
+            left: 10,
+            right: 10
         }
     },
-    cutout: '60%'
+    // Ajuste 1: Gráfico menor (70%) para dar o respiro do segundo print
+    radius: '70%', 
+    cutout: '55%', 
+    onClick: (e, el) => handleChartClick(e, el, key),
+    plugins: {
+        legend: {
+            display: true,
+            position: 'bottom',
+            align: 'center',
+            labels: {
+                usePointStyle: true,
+                pointStyle: 'circle',
+                boxWidth: 8,
+                // Ajuste 2: Espaço grande entre o gráfico e as bolinhas da legenda
+                padding: 5, 
+                font: {
+                    family: "'Inter', sans-serif",
+                    size: 9,
+                    weight: '500'
+                }
+            }
+        },
+        datalabels: {
+            display: true,
+            anchor: 'end',
+            align: 'end',
+            offset: 10,
+            color: '#444',
+            textAlign: 'center',
+            font: {
+                family: "'Inter', sans-serif",
+                size: 8,
+                weight: 'bold'
+            },
+            formatter: (v, ctx) => {
+                const label = ctx.chart.data.labels[ctx.dataIndex];
+                const realData = ctx.dataset.realData || ctx.dataset.data;
+                const total = realData.reduce((a, b) => a + b, 0);
+                const val = realData[ctx.dataIndex];
+                const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                
+                // Ajuste 3: Lógica para o rótulo de baixo (SEMISSINTÉTICO) 
+                // não exibir a porcentagem e não bater na legenda
+                if (label === 'SEMISSINTÉTICO') {
+                    return label; // Retorna apenas o nome, sem o \n e a porcentagem
+                }
+
+                return `${label}\n${pct}`;
+            }
+        }
+    }
 });
 
 const totalLitrosCalculado = computed(() => {
@@ -360,26 +457,56 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                     />
                     </div></div></div></div>
                     <div class="col-md-7"><div class="row g-2 h-100">
-                        <div class="col-4">
-                            <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
-                                <small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small>
-                                <div style="height: 200px;">
-                                <Doughnut 
-                                    :data="{ 
-                                    /* Filtramos a lista antes de mapear os labels e os dados */
-                                    labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), 
-                                    datasets: [{ 
-                                        data: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.litros), 
-                                        backgroundColor: orangePalette 
-                                    }] 
-                                    }" 
-                                    :options="getDoughnutOptions('basico')" 
-                                />
+                        <!-- BÁSICO -->
+                            <div class="col-4">
+                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
+                                    <small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small>
+                                    <div style="height: 250px;"> <!-- Aumentado um pouco para caber as labels fora -->
+                                        <Doughnut 
+                                            :data="{ 
+                                                labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), 
+                                                datasets: [{ 
+                                                    data: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.litros), 
+                                                    backgroundColor: orangePalette 
+                                                }] 
+                                            }" 
+                                            :options="getDoughnutOptions('basico')" 
+                                        />
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- SEGMENTO -->
+                            <div class="col-4">
+                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
+                                    <small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small>
+                                    <div style="height: 250px;">
+                                        <Doughnut 
+                                            :data="{ 
+                                                labels: detalhada.graficos.segmento.map(i=>i.label), 
+                                                datasets: [{ 
+                                                    data: detalhada.graficos.segmento.map(i=>i.litros), 
+                                                    backgroundColor: orangePalette 
+                                                }] 
+                                            }" 
+                                            :options="getDoughnutOptions('segmento')" 
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                        <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small><div style="height: 200px;"><Doughnut :data="{ labels: detalhada.graficos.segmento.map(i=>i.label), datasets: [{ data: detalhada.graficos.segmento.map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('segmento')" /></div></div></div>
-                        <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small><div style="height: 200px;"><Doughnut :data="normasChartData" :options="getDoughnutOptions('norma')" /></div></div></div>
+
+                            <!-- NORMAS -->
+                            <div class="col-4">
+                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
+                                    <small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small>
+                                    <div style="height: 250px;">
+                                        <Doughnut 
+                                            :data="normasChartData" 
+                                            :options="getDoughnutOptions('norma')" 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
                     </div></div>
                 </div>
             </div>
@@ -434,7 +561,42 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
         } 
     }" 
 />
-                <Pie v-else-if="modalData" :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.litros), backgroundColor: orangePalette }] }" :options="{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'top' }, datalabels: { color: '#444', textAlign: 'center', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => { return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); } } } }" />
+                <Pie 
+    v-else-if="modalData" 
+    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.litros), backgroundColor: orangePalette }] }" 
+    :options="{ 
+        responsive: true, 
+        maintainAspectRatio: false,
+        layout: {
+            padding: 40 // Espaço para os textos externos não cortarem
+        },
+        radius: '70%', // Diminui a pizza para caber os textos
+        plugins: { 
+            legend: { 
+                display: true, 
+                position: 'top',
+                labels: { usePointStyle: true, pointStyle: 'circle', font: { size: 10 } }
+            }, 
+            datalabels: { 
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                offset: 15,
+                color: '#444', 
+                textAlign: 'center', 
+                font: { 
+                    family: 'Inter, sans-serif', // <-- Força a fonte moderna aqui
+                    weight: 'bold', 
+                    size: 10 
+                }, 
+                formatter: (v, ctx) => { 
+                    // Mostra Nome e Volume (formatado)
+                    return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); 
+                } 
+            } 
+        } 
+    }" 
+/>
             </div>
         </div>
     </div>
