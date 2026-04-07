@@ -14,7 +14,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
-// const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
+//const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
 
 ChartJS.register(
     CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
@@ -135,6 +135,11 @@ const getDoughnutOptions = (key) => ({
     cutout: '60%'
 });
 
+const totalLitrosCalculado = computed(() => {
+    if (!detalhada.value?.comparativosSegmento) return 0;
+    return detalhada.value.comparativosSegmento.reduce((acc, s) => acc + s.litrosAno, 0);
+});
+
 // --- AJUSTE: CIDADES BRASIL E TOP 30 ---
 const chartCidadesTop5 = computed(() => {
     const list = detalhada.value?.graficos?.topCidades || [];
@@ -251,7 +256,14 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                 <div class="row g-3 mb-4">
                     <div v-for="k in detalhada.cardsTopo" :key="k.id" class="col-md-3">
                         <div class="card border-0 shadow-sm p-4 rounded-4 bg-white d-flex flex-row align-items-center justify-content-center gap-3" :class="{'card-white-kpi': k.id === 'marcas' || k.id === 'modelos'}" @click="(k.id === 'marcas' || k.id === 'modelos') ? openDetailedModal(k.label) : null">
-                            <div class="icon-circle-print"><Zap v-if="k.id==='litros-ano'" class="text-orange" :size="24" /><Car v-else class="text-orange" :size="24" /></div><div><h2 class="fw-bold m-0 text-dark" style="font-size:1.7rem">{{ formatNum(k.valor) }}</h2><small class="text-muted fw-bold d-block">{{ k.label }}</small></div>
+                            <div class="icon-circle-print"><Zap v-if="k.id==='litros-ano'" class="text-orange" :size="24" /><Car v-else class="text-orange" :size="24" /></div>
+                            <div>
+                                <!-- Alteração aqui: se for o card de litros, usa o valor calculado por nós -->
+                                <h2 class="fw-bold m-0 text-dark" style="font-size:1.7rem">
+                                    {{ k.id === 'litros-ano' ? formatNum(totalLitrosCalculado) : formatNum(k.valor) }}
+                                </h2>
+                                <small class="text-muted fw-bold d-block">{{ k.label }}</small>
+                            </div>
                         </div>
                     </div>
                 </div>
