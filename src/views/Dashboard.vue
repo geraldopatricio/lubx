@@ -14,7 +14,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
-//const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
+// const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
 
 ChartJS.register(
     CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
@@ -122,7 +122,7 @@ const getDoughnutOptions = (key) => ({
     responsive: true, maintainAspectRatio: false,
     onClick: (e, el) => handleChartClick(e, el, key),
     plugins: {
-        legend: { display: true, position: 'bottom', labels: { boxWidth: 8, padding: 8, font: { size: 9 } } },
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 8, padding: 8, font: { size: 9 }, filter: (item) => item.text !== 'Não informado' } },
         datalabels: {
             color: '#444', font: { size: 9, weight: 'bold' },
             formatter: (v, ctx) => {
@@ -165,8 +165,28 @@ const chartViscosidade = computed(() => {
     return {
         labels: items.map(i => i.label),
         datasets: [
-            { type: 'line', label: '% Acc', borderColor: '#e97332', data: items.map(i => { acc += i.litros; return ((acc / total) * 100).toFixed(2); }), yAxisID: 'y1', tension: 0.2 },
-            { type: 'bar', label: 'Vol Mi', backgroundColor: '#3b82f6', data: items.map(i => i.litros / 1000000), yAxisID: 'y', barThickness: 28, datalabels: { formatter: v => v.toFixed(2) } }
+            { 
+                type: 'line', 
+                label: '% Acc', 
+                borderColor: '#e97332', 
+                data: items.map(i => { acc += i.litros; return ((acc / total) * 100).toFixed(2); }), 
+                yAxisID: 'y1', 
+                tension: 0.2,
+                datalabels: { align: 'top', anchor: 'end', offset: 2 } // Adicionado aqui
+            },
+            { 
+                type: 'bar', 
+                label: 'Vol Mi', 
+                backgroundColor: '#3b82f6', 
+                data: items.map(i => i.litros / 1000000), 
+                yAxisID: 'y', 
+                barThickness: 28, 
+                datalabels: { 
+                    formatter: v => v.toFixed(2),
+                    align: 'top',   // Adicionado aqui
+                    anchor: 'end'   // Adicionado aqui
+                } 
+            }
         ]
     };
 });
@@ -270,14 +290,52 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 
                 <div class="row g-2 mb-3">
                     <div class="col-lg-5"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white"><div class="row h-100 align-items-center"><div v-for="s in detalhada.comparativosSegmento" :key="s.id" class="col-4 border-end last-no-border px-3"><div class="d-flex align-items-center gap-2 mb-3"><component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange" :size="42" /><div class="lh-sm"><strong>{{ formatNum(s.veiculos) }}</strong><small class="text-muted d-block" style="font-size:10px">Veículos</small></div></div><div class="mb-3 border-top pt-2"><strong>{{ formatNum(s.litrosAno) }}</strong><small class="text-muted d-block" style="font-size:10px">Litros / ano</small></div><div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm"><small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small><input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters[s.id.includes('leve') ? 'trocaLeve' : (s.id.includes('pesada') ? 'trocaPesada' : 'trocaMoto')]"></div></div></div></div></div>
-                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;"><Bar :data="chartEstados" :options="{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }" /></div></div></div>
-                    <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;"><Bar :data="chartCidadesTop5" :options="{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }" /></div></div></div>
+                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;">
+                    <Bar :data="chartEstados" :options="{ 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        layout: { padding: { top: 20 } }, // Espaço para o número não sumir no topo
+                        plugins: { 
+                            legend: { display: false },
+                            datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' } } 
+                        } 
+                    }" />
+                    </div></div></div>
+                    <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;">
+                    <Bar :data="chartCidadesTop5" :options="{ 
+                        indexAxis: 'y', 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        layout: { padding: { right: 30 } }, // Espaço para o número à direita
+                        plugins: { 
+                            legend: { display: false },
+                            datalabels: { anchor: 'end', align: 'right', font: { weight: 'bold' } } 
+                        } 
+                    }" />
+                    </div></div></div>
                 </div>
 
                 <div class="row g-2">
                     <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;"><Bar :data="chartViscosidade" :options="{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, y1: { position:'right', grid:{display:false} } } }" /></div></div></div>
                     <div class="col-md-7"><div class="row g-2 h-100">
-                        <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small><div style="height: 200px;"><Doughnut :data="{ labels: detalhada.graficos.basico.map(i=>i.label), datasets: [{ data: detalhada.graficos.basico.map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('basico')" /></div></div></div>
+                        <div class="col-4">
+                            <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
+                                <small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small>
+                                <div style="height: 200px;">
+                                <Doughnut 
+                                    :data="{ 
+                                    /* Filtramos a lista antes de mapear os labels e os dados */
+                                    labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), 
+                                    datasets: [{ 
+                                        data: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.litros), 
+                                        backgroundColor: orangePalette 
+                                    }] 
+                                    }" 
+                                    :options="getDoughnutOptions('basico')" 
+                                />
+                                </div>
+                            </div>
+                            </div>
                         <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small><div style="height: 200px;"><Doughnut :data="{ labels: detalhada.graficos.segmento.map(i=>i.label), datasets: [{ data: detalhada.graficos.segmento.map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('segmento')" /></div></div></div>
                         <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small><div style="height: 200px;"><Doughnut :data="normasChartData" :options="getDoughnutOptions('norma')" /></div></div></div>
                     </div></div>
@@ -293,8 +351,47 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
             <div class="text-center mb-4"><h4 class="fw-bold text-dark m-0">{{ modalTitle }}</h4></div>
             <div v-if="isModalLoading" class="text-center p-5"><div class="spinner-border text-orange"></div></div>
             <div v-else style="height: 400px;">
-                <Bar v-if="modalChartType === 'bar-cities'" :data="chartCidadesFull" :options="{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }" />
-                <Bar v-else-if="modalChartType === 'bar'" :data="chartEstadosFull" :options="{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }" />
+                <!-- Gráfico de Cidades no Modal -->
+<Bar 
+    v-if="modalChartType === 'bar-cities'" 
+    :data="chartCidadesFull" 
+    :options="{ 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        layout: { padding: { top: 30 } }, 
+        plugins: { 
+            legend: { display: false },
+            datalabels: { 
+                anchor: 'end', 
+                align: 'top', 
+                offset: 4,
+                font: { weight: 'bold', size: 10 },
+                formatter: (v) => v.toFixed(2)
+            } 
+        } 
+    }" 
+/>
+
+<!-- Gráfico de Estados no Modal -->
+<Bar 
+    v-else-if="modalChartType === 'bar'" 
+    :data="chartEstadosFull" 
+    :options="{ 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        layout: { padding: { top: 30 } },
+        plugins: { 
+            legend: { display: false },
+            datalabels: { 
+                anchor: 'end', 
+                align: 'top', 
+                offset: 4,
+                font: { weight: 'bold', size: 10 },
+                formatter: (v) => v.toFixed(2)
+            } 
+        } 
+    }" 
+/>
                 <Pie v-else-if="modalData" :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.litros), backgroundColor: orangePalette }] }" :options="{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'top' }, datalabels: { color: '#444', textAlign: 'center', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => { return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); } } } }" />
             </div>
         </div>
