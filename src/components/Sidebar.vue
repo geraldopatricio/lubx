@@ -97,7 +97,7 @@ onMounted(() => {
       <div class="p-1 d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px; font-weight: bold;">
         
       </div>
-      <img src="/Lubx_01.png" alt="Logo" style="width: 150px; height: 32px;">
+      <img src="/Lubx_01.png" alt="Logo" style="width: 120px; height: 32px;">
     </div>
 
     <div class="flex-grow-1 overflow-auto hide-scrollbar">
