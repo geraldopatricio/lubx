@@ -53,8 +53,25 @@ const handleLogout = () => {
 
 // 2. ALTERADO: Agora carrega do arquivo local em vez do fetch
 const fetchMenus = () => {
-  // Simplesmente atribui o JSON importado ao valor reativo
-  menuItems.value = menusLocal;
+  // 1. Pega as informações do usuário logado no localStorage
+  const savedUser = localStorage.getItem('user_info');
+  const user = savedUser ? JSON.parse(savedUser) : null;
+  
+  // 2. Verifica se o perfil é admin (conforme sua coluna no banco)
+  // Nota: Usei .toLowerCase() para evitar problemas com 'Admin' vs 'admin'
+  const isAdmin = user && user.perfil && user.perfil.toLowerCase() === 'admin';
+
+  // 3. Filtra os itens do JSON
+  menuItems.value = menusLocal.filter(item => {
+    // Se o usuário FOR admin, ele vê tudo
+    if (isAdmin) return true;
+
+    // Se NÃO FOR admin, escondemos os IDs 22 (separador Configurações) e 24 (link Usuários)
+    const itensRestritos = [22, 24];
+    
+    // Retorna true apenas se o ID do item NÃO estiver na lista de restritos
+    return !itensRestritos.includes(item.id);
+  });
 };
 
 watch(route, (newRoute) => {
