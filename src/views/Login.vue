@@ -109,7 +109,6 @@ const openModal = () => { showToast('O cadastro deve ser solicitado ao administr
               <input class="form-check-input" type="checkbox" id="remember" :disabled="isLoading">
               <label class="form-check-label small text-muted" for="remember">Lembrar-me</label>
             </div>
-            <a href="#" class="small text-primary text-decoration-none fw-bold" @click.prevent="openForgotModal">Esqueceu a senha?</a>
           </div>
 
           <button type="submit" class="btn btn-primary w-100 py-2 fw-bold text-white shadow-sm hover-effect d-flex justify-content-center align-items-center gap-2" :disabled="isLoading">
@@ -117,11 +116,6 @@ const openModal = () => { showToast('O cadastro deve ser solicitado ao administr
             {{ isLoading ? 'Validando...' : 'Entrar no Sistema' }}
           </button>
         </form>
-      </div>
-      <div class="card-footer bg-white border-0 text-center py-3">
-        <small class="text-muted">Não tem uma conta? 
-          <a href="#" class="text-primary fw-bold text-decoration-none" @click.prevent="openModal">Criar conta</a>
-        </small>
       </div>
     </div>
   </div>
