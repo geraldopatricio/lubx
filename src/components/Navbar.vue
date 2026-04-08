@@ -5,32 +5,22 @@ import { Menu, User } from 'lucide-vue-next';
 defineEmits(['toggle-sidebar']);
 
 const userEmail = ref('');
-const userName = ref('Bem vindo!'); // Valor padrão caso não tenha nome no token
+const userName = ref(''); 
 
 onMounted(() => {
-  const token = localStorage.getItem('authToken');
+  // 1. Pegamos o objeto user_info que salvamos no login
+  const savedUser = localStorage.getItem('user_info');
 
-  if (token) {
+  if (savedUser) {
     try {
-      // Decodificação do Token JWT
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-
-      const payload = JSON.parse(jsonPayload);
+      const user = JSON.parse(savedUser);
       
-      // Preenche o Email
-      userEmail.value = payload.email || '';
-
-      // Preenche o Nome (Se existir no token, senão mantém 'Bem vindo!')
-      if (payload.nome) {
-        userName.value = payload.nome;
-      }
+      // 2. Preenchemos as variáveis reativas com os dados do banco
+      userName.value = user.nome || 'Usuário';
+      userEmail.value = user.email || '';
       
     } catch (error) {
-      console.error('Erro ao decodificar token:', error);
+      console.error('Erro ao processar dados do usuário:', error);
     }
   }
 });
@@ -54,15 +44,13 @@ onMounted(() => {
 
     <div class="ms-auto d-flex align-items-center gap-3">
       <div class="text-end d-none d-md-block">
-        <!-- AQUI: Mostra o Nome do usuário vindo do Token -->
-        <div class="fw-bold text-dark" style="font-size: 0.9rem;">{{ userName }}</div>
-        <!-- Mostra o Email do usuário -->
+        <div class="fw-bold text-dark text-uppercase" style="font-size: 0.9rem;">{{ userName }}</div>
         <div class="text-muted" style="font-size: 0.8rem;">{{ userEmail }}</div>
       </div>
       
-      <!-- Avatar Padrão -->
-      <div class="avatar-circle d-flex align-items-center justify-content-center bg-light border text-secondary">
-        <User :size="24" />
+      <!-- Avatar Padrão (Mostra a primeira letra do nome) -->
+      <div class="avatar-circle d-flex align-items-center justify-content-center bg-orange-subtle text-primary fw-bold border border-warning">
+        {{ userName.charAt(0).toUpperCase() }}
       </div>
 
     </div>
@@ -70,9 +58,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.bg-orange-subtle { background-color: #fff7ed !important; }
+.text-primary { color: #f97316 !important; }
 .avatar-circle {
-  width: 40px; 
-  height: 40px; 
+  width: 42px; 
+  height: 42px; 
   border-radius: 50%;
+  font-size: 1.2rem;
 }
 </style>
