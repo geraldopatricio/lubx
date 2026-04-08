@@ -13,8 +13,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-// const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
-const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
+const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
+// const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
 
 // Plugin customizado para desenhar as linhas (Leader Lines)
 const doughnutLabelsLine = {
