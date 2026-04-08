@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, Search, RefreshCw, X, Lock, Unlock, Eye, UserX, UserCheck
 } from 'lucide-vue-next';
 
-const response = await fetch('https://lubx-api.lubconsulta.com.br/auth/usuarios', {
+const API_URL = 'https://lubx-api.lubconsulta.com.br/auth/usuarios';
 
 const users = ref([]);
 const searchQuery = ref('');
