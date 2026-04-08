@@ -4,7 +4,8 @@ import Login from '../views/Login.vue'
 
 // Importar as novas telas
 import Usuarios from '../views/cadastros/Usuarios.vue'; 
-import Acesso from '../views/cadastros/Acesso.vue';  
+import Acesso from '../views/cadastros/Acesso.vue';   
+import Similaridade from '../views/cadastros/Similaridade.vue';  
 import Frotas from '../views/dashboards/Frotas.vue';  
 import Marcas from '../views/dashboards/Marcas.vue';  
 import Ibp from '../views/dashboards/Ibp.vue';  
@@ -55,6 +56,12 @@ const router = createRouter({
       path: '/cadastros/acesso', 
       name: 'acesso', 
       component: Acesso, 
+      meta: { requiresLayout: true } 
+    },  
+    { 
+      path: '/cadastros/similaridade', 
+      name: 'similaridade', 
+      component: Similaridade, 
       meta: { requiresLayout: true } 
     }, 
     { 
