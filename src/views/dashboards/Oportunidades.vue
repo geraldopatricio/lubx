@@ -1,4 +1,5 @@
 <script setup>
+
 import { ref } from 'vue';
 import { Globe, LayoutDashboard, ExternalLink } from 'lucide-vue-next';
 
@@ -20,8 +21,18 @@ const handleLoad = () => {
         </div>
         <div>
           <h4 class="fw-bold m-0 text-dark">BI Oportunidades</h4>
-          <p class="text-muted small mb-0">Análise Estratégica - TotalEnergies</p>
+          <p class="text-muted small mb-0">Análise Estratégica - Total Energies</p>
         </div>
+      </div>
+      
+      <div class="d-flex gap-2">
+        <a 
+          href="https://app.powerbi.com/view?r=eyJrIjoiMzM5NWYxZmEtMmFkYS00MjE1LTlmZWYtZTI5NGY4ZjA5ZmUyIiwidCI6ImEzYTY5ODI1LTA2YTMtNDU0Ny1iZGZkLTBlYWI3MDJmMTcyNiJ9" 
+          target="_blank" 
+          class="btn btn-orange-outline btn-sm d-flex align-items-center gap-2 px-3 fw-bold"
+        >
+          <ExternalLink :size="16"/> Ver em Tela Cheia
+        </a>
       </div>
     </div>
 
@@ -35,8 +46,14 @@ const handleLoad = () => {
           <span class="mt-2 fw-bold text-muted">Carregando Relatório...</span>
         </div>
 
-        <iframe title="BI Oportunidades" width="1024" height="1060" src="https://app.powerbi.com/view?r=eyJrIjoiMzM5NWYxZmEtMmFkYS00MjE1LTlmZWYtZTI5NGY4ZjA5ZmUyIiwidCI6ImEzYTY5ODI1LTA2YTMtNDU0Ny1iZGZkLTBlYWI3MDJmMTcyNiJ9" frameborder="0" allowFullScreen="true"></iframe>
-
+        <iframe 
+          title="BI Oportunidades" 
+          class="powerbi-iframe"
+          src="https://app.powerbi.com/view?r=eyJrIjoiMzM5NWYxZmEtMmFkYS00MjE1LTlmZWYtZTI5NGY4ZjA5ZmUyIiwidCI6ImEzYTY5ODI1LTA2YTMtNDU0Ny1iZGZkLTBlYWI3MDJmMTcyNiJ9" 
+          frameborder="0" 
+          allowFullScreen="true"
+          @load="handleLoad"
+        ></iframe>
       </div>
     </div>
   </div>
