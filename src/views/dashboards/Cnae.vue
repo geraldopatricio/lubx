@@ -19,7 +19,7 @@ const handleLoad = () => {
           <LayoutDashboard class="text-orange" :size="24"/>
         </div>
         <div>
-          <h4 class="fw-bold m-0 text-dark">BI Oportunidades</h4>
+          <h4 class="fw-bold m-0 text-dark">BI CNAE</h4>
           <p class="text-muted small mb-0">Análise Estratégica - TotalEnergies</p>
         </div>
       </div>
