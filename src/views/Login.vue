@@ -1,10 +1,7 @@
 <script setup>
 import { useRouter } from 'vue-router';
 import { ref } from 'vue';
-import { Eye, EyeOff, AlertTriangle, CheckCircle, X, Mail } from 'lucide-vue-next';
-
-// IMPORTAÇÃO DA "BASE DE DADOS"
-import usuariosDB from '@/data/acesso.json';
+import { Eye, EyeOff, AlertTriangle, CheckCircle } from 'lucide-vue-next';
 
 const router = useRouter();
 
@@ -14,73 +11,52 @@ const password = ref('');
 const showPassword = ref(false);
 const isLoading = ref(false);
 
-// === ESTADOS DE REGISTRO / RECUPERAÇÃO ===
-const showRegisterModal = ref(false);
-const regName = ref('');
-const regEmail = ref('');
-const regPassword = ref('');
-const showRegPassword = ref(false);
-const isRegistering = ref(false);
-
-const showForgotModal = ref(false);
-const forgotEmail = ref('');
-const isSendingForgot = ref(false);
-
-// === SISTEMA DE TOAST (ALERTA) ===
+// === SISTEMA DE TOAST ===
 const toastMessage = ref('');
 const toastType = ref('error'); 
 
 const showToast = (msg, type = 'error') => {
   toastMessage.value = msg;
   toastType.value = type;
-  setTimeout(() => {
-    toastMessage.value = '';
-  }, 5000);
+  setTimeout(() => { toastMessage.value = ''; }, 5000);
 };
 
 const togglePassword = () => showPassword.value = !showPassword.value;
-const toggleRegPassword = () => showRegPassword.value = !showRegPassword.value;
 
-// === LÓGICA DE LOGIN (ATUALIZADA PARA USAR O JSON) ===
+// === LÓGICA DE LOGIN CONECTADA AO BACKEND ===
 const handleLogin = async () => {
+  if (!email.value || !password.value) {
+    showToast('Preencha todos os campos', 'error');
+    return;
+  }
+
   toastMessage.value = '';
   isLoading.value = true;
 
-  // Simular um pequeno delay de rede para ficar natural
-  await new Promise(resolve => setTimeout(resolve, 800));
-
   try {
-    // Busca o usuário no arquivo JSON
-    const usuarioEncontrado = usuariosDB.find(user => 
-      user.email.toLowerCase() === email.value.toLowerCase() && 
-      user.senha === password.value
-    );
+    const response = await fetch('http://localhost:3000/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.value,
+        senha: password.value
+      })
+    });
 
-    if (usuarioEncontrado) {
-      // Verifica se o usuário está ativo
-      if (usuarioEncontrado.status !== 'ativo') {
-        throw new Error('Este usuário está inativo. Entre em contato com o suporte.');
-      }
+    const data = await response.json();
 
-      // Salva informações no localStorage (simulando sessão)
-      localStorage.setItem('authToken', `token-fake-${usuarioEncontrado.id}`);
-      localStorage.setItem('user_info', JSON.stringify({
-        nome: usuarioEncontrado.nome,
-        tipo: usuarioEncontrado.tipo,
-        email: usuarioEncontrado.email
-      }));
-      
-      showToast(`Bem-vindo, ${usuarioEncontrado.nome}!`, 'success');
-      
-      setTimeout(() => {
-        router.push('/');
-      }, 800);
-
-    } else {
-      // Se não encontrar no JSON, tenta a API original ou dá erro
-      // Aqui vamos priorizar o erro de "Credenciais Inválidas"
-      throw new Error('E-mail ou senha incorretos.');
+    if (!response.ok) {
+      // Aqui ele vai exibir "E-mail ou senha incorretos" ou "Seu acesso está bloqueado"
+      throw new Error(data.message || 'Erro ao realizar login');
     }
+
+    // SUCESSO
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('user_info', JSON.stringify(data.user));
+    
+    showToast(`Bem-vindo, ${data.user.nome}!`, 'success');
+    
+    setTimeout(() => { router.push('/'); }, 800);
 
   } catch (error) {
     showToast(error.message, 'error');
@@ -89,23 +65,14 @@ const handleLogin = async () => {
   }
 };
 
-// Lógica de Registro (Apenas Visual, pois o JS do navegador não consegue salvar em arquivos locais por segurança)
-const handleRegister = async () => {
-  showToast('Funcionalidade de cadastro requer backend para gravar no arquivo.', 'error');
-};
-
-const handleForgotPassword = async () => {
-  showToast('Funcionalidade de recuperação requer integração de e-mail.', 'success');
-};
-
-const openModal = () => { showRegisterModal.value = true; };
-const openForgotModal = () => { showForgotModal.value = true; };
+const openForgotModal = () => { showToast('Funcionalidade em desenvolvimento.', 'success'); };
+const openModal = () => { showToast('O cadastro deve ser solicitado ao administrador.', 'error'); };
 </script>
 
 <template>
   <div class="d-flex align-items-center justify-content-center min-vh-100 bg-light position-relative overflow-hidden">
     
-    <!-- === ALERTA FLUTUANTE (TOAST) === -->
+    <!-- TOAST -->
     <Transition name="toast">
       <div v-if="toastMessage" :class="['custom-toast', toastType === 'success' ? 'toast-success' : 'toast-error']">
         <CheckCircle v-if="toastType === 'success'" class="me-2" :size="20" />
@@ -114,16 +81,12 @@ const openForgotModal = () => { showForgotModal.value = true; };
       </div>
     </Transition>
     
-    <!-- CARD DE LOGIN -->
     <div class="card border-0 shadow-lg p-4" style="max-width: 400px; width: 100%;">
       <div class="card-body">
-        
         <div class="text-center mb-4">
-          <div class="p-2 d-inline-flex align-items-center justify-content-center mb-3">
-            <img src="/Lubx_01.png" alt="Logo" style="width: 200px; height: 52px;">
-          </div>
+          <img src="/Lubx_01.png" alt="Logo" style="width: 200px; height: 52px;" class="mb-3">
           <h4 class="fw-bold text-dark">Área de Acesso</h4>
-          <p class="text-muted small">BUSINESS INTELLIGENCE - TOTAL ENERGIES</p>
+          <p class="text-muted small">BUSINESS INTELLIGENCE - TOTALENERGIES</p>
         </div>
 
         <form @submit.prevent="handleLogin">
@@ -154,7 +117,6 @@ const openForgotModal = () => { showForgotModal.value = true; };
             {{ isLoading ? 'Validando...' : 'Entrar no Sistema' }}
           </button>
         </form>
-
       </div>
       <div class="card-footer bg-white border-0 text-center py-3">
         <small class="text-muted">Não tem uma conta? 
@@ -162,41 +124,15 @@ const openForgotModal = () => { showForgotModal.value = true; };
         </small>
       </div>
     </div>
-
-    <!-- MODAIS (CÓDIGO ORIGINAL MANTIDO...) -->
-    <!-- ... (restante dos modais e estilos permanecem iguais ao seu arquivo original) ... -->
   </div>
 </template>
 
 <style scoped>
-/* Estilos originais mantidos */
-.custom-toast {
-  position: fixed; top: 50px; left: 50%; transform: translateX(-50%);
-  color: white; padding: 12px 24px; border-radius: 50px;
-  box-shadow: 0 10px 25px rgba(0,0,0, 0.2); z-index: 9999;
-  display: flex; align-items: center; font-weight: 600; font-size: 0.9rem; pointer-events: none;
-}
+/* Estilos mantidos... */
+.custom-toast { position: fixed; top: 50px; left: 50%; transform: translateX(-50%); color: white; padding: 12px 24px; border-radius: 50px; box-shadow: 0 10px 25px rgba(0,0,0, 0.2); z-index: 9999; display: flex; align-items: center; font-weight: 600; font-size: 0.9rem; pointer-events: none; }
 .toast-error { background-color: #ef4444; }
 .toast-success { background-color: #22c55e; }
-.toast-enter-active { animation: bounce-in 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-.toast-leave-active { transition: all 0.5s ease-out; }
-.toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(-50px); }
-@keyframes bounce-in {
-  0% { opacity: 0; top: -100px; transform: translateX(-50%); }
-  60% { opacity: 1; top: 60px; }
-  100% { top: 50px; transform: translateX(-50%); }
-}
-
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1050; }
-.overlay-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
-.modal-content { z-index: 1060; background: white; animation: modal-up 0.3s ease-out; }
-@keyframes modal-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-
-.custom-floating > .form-control { border-radius: 8px; border: 1px solid #dee2e6; height: 50px; padding-top: 0.625rem; padding-bottom: 0.625rem; }
-.custom-floating > .form-control:focus { box-shadow: none; border-color: #0056b3; border-width: 2px; }
-.custom-floating > label { padding: 0.7rem 0.75rem; color: #6c757d; pointer-events: none; transition: all 0.2s ease-in-out; }
-.custom-floating > .form-control:focus ~ label, .custom-floating > .form-control:not(:placeholder-shown) ~ label { opacity: 1; transform: scale(0.85) translateY(-0.8rem) translateX(0.65rem); background-color: white; padding: 0 5px; height: auto; color: #0056b3; z-index: 5; }
+.custom-floating > .form-control { border-radius: 8px; border: 1px solid #dee2e6; height: 50px; }
+.custom-floating > label { padding: 0.7rem 0.75rem; color: #6c757d; }
 .hover-effect:hover { filter: brightness(1.1); transition: 0.3s; }
 </style>
