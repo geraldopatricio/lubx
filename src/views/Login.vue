@@ -56,7 +56,7 @@ const handleLogin = async () => {
     
     showToast(`Bem-vindo, ${data.user.nome}!`, 'success');
     
-    setTimeout(() => { router.push('/dashboards/frotas'); }, 800);
+    setTimeout(() => { router.push('/'); }, 800);
 
   } catch (error) {
     showToast(error.message, 'error');
