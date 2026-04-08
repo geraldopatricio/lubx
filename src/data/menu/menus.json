@@ -8,11 +8,25 @@
     "ordem": 1,
     "tipo": "grupo",
     "submenus": [
-      { "id": 2, "titulo": "Região", "rota": "/", "ordem": 1 },
-      { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 },
-      { "id": 4, "titulo": "IBP", "rota": "/dashboards/ibp2", "ordem": 1 },
-      { "id": 5, "titulo": "CNAE", "rota": "/dashboards/cnae", "ordem": 1 },
-      { "id": 6, "titulo": "Produtos Similares", "rota": "/cadastros/similaridade", "ordem": 1 }
+      { "id": 2, "titulo": "Região", "rota": "/dashboards/frotas", "ordem": 1 },
+      { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunidades", "ordem": 1 },
+      { "id": 4, "titulo": "IBP", "rota": "/dashboards/ibp", "ordem": 1 }
+    ]
+  },
+  {
+    "id": 10,
+    "titulo": "Dashboard v2",
+    "icone": "LayoutDashboard",
+    "rota": null,
+    "pai_id": null,
+    "ordem": 2,
+    "tipo": "grupo",
+    "submenus": [
+      { "id": 12, "titulo": "Região", "rota": "/", "ordem": 1 },
+      { "id": 13, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 },
+      { "id": 14, "titulo": "IBP", "rota": "/dashboards/ibp2", "ordem": 1 },
+      { "id": 15, "titulo": "CNAE", "rota": "/dashboards/cnae", "ordem": 1 },
+      { "id": 16, "titulo": "Produtos Similares", "rota": "/cadastros/similaridade", "ordem": 1 }
     ]
   },
   {
