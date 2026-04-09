@@ -2,16 +2,16 @@
 import { ref } from 'vue';
 
 const marcas = [
-  { nome: 'TOTALENERGIES', cor: '#ff0000', share: '32,1%', logo: 'totalenergies' },
-  { nome: 'YPF', cor: '#0070c0', share: '24,8%', logo: 'ypf' },
+  { nome: 'TOTALENERGIES', cor: '#8C6239', share: '32,1%', logo: 'totalenergies' },
+  { nome: 'YPF', cor: '#63666A', share: '24,8%', logo: 'ypf' },
   { nome: 'VIBRA', cor: '#004415', share: '15,2%', logo: 'vibra' },
-  { nome: 'PETRONAS', cor: '#00a19c', share: '11,4%', logo: 'petronas' },
-  { nome: 'CASTROL', cor: '#f00023', share: '8,9%', logo: 'castrol' },
-  { nome: 'VALVOLINE', cor: '#d1d5d8', share: '5,6%', logo: 'valvoline' },
-  { nome: 'RAIZEN', cor: '#990093', share: '2,0%', logo: 'raizen' },
-  { nome: 'MOOVE', cor: '#85bd00', share: '2,0%', logo: 'moove' },
-  { nome: 'LWART', cor: '#006cb7', share: '2,0%', logo: 'lwart' },
-  { nome: 'ICONIC', cor: '#ff511f', share: '2,0%', logo: 'iconic' }
+  { nome: 'PETRONAS', cor: '#00A79D', share: '11,4%', logo: 'petronas' },
+  { nome: 'CASTROL', cor: '#E10600', share: '8,9%', logo: 'castrol' },
+  { nome: 'VALVOLINE', cor: '#2FA4E7', share: '5,6%', logo: 'valvoline' },
+  { nome: 'RAIZEN', cor: '#9B1BB3', share: '2,0%', logo: 'raizen' },
+  { nome: 'MOOVE', cor: '#00A3E0', share: '2,0%', logo: 'moove' },
+  { nome: 'LWART', cor: '#000000', share: '2,0%', logo: 'lwart' },
+  { nome: 'ICONIC', cor: '#F56600', share: '2,0%', logo: 'iconic' }
 ];
 
 const kpis = [
