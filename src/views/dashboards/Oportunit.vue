@@ -89,36 +89,69 @@ const fetchDashboardData = async () => {
     isLoading.value = true;
     const ufParam = selectedUF.value === 'Todos' ? '' : selectedUF.value;
     
-    // Parâmetros incluindo multi-seleção de veículos separada por vírgula
+    // Criamos um objeto de parâmetros limpo
+    // Certificando que o tipoVeiculo vá como uma string separada por vírgula 
+    // ou conforme a sua API já aceita no simulador.
     const params = {
-        ...filters,
+        viscosidade: filters.viscosidade,
+        api: filters.api,
+        acea: filters.acea,
+        jaso: filters.jaso,
+        basico: filters.basico,
         estado: ufParam,
-        tipoVeiculo: filters.tipoVeiculo.join(','),
+        // Mantemos o join pois você confirmou que funciona para o card de cima
+        tipoVeiculo: filters.tipoVeiculo.join(','), 
         suaVendaAtualLitros: simuladorShare.suaVendaAtualLitros,
         mesesCorridos: simuladorShare.mesesCorridos,
         shareDesejado: simuladorShare.shareDesejado
     };
 
     try {
+        // Fazemos as chamadas simultâneas
         const [resOverview, resSimulador, resSpecs] = await Promise.all([
             api.get('/overview', { params }),
             api.get('/simulador', { params }),
             api.get('/especificacoes', { params })
         ]);
 
-        if (resOverview.data.data) overviewData.value = resOverview.data.data;
-        if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
+        if (resOverview.data && resOverview.data.data) {
+            overviewData.value = resOverview.data.data;
+        }
+
+        if (resSimulador.data && resSimulador.data.data) {
+            simuladorTrocasData.value = resSimulador.data.data;
+        }
         
-        // Carrega dados da tabela (trazendo os valores de 'suaVendaEstimada' do endpoint)
-        if (resSpecs.data.data) {
-            tableData.value = resSpecs.data.data.itens || [];
+        // Verificação importante para a Tabela
+        if (resSpecs.data && resSpecs.data.data) {
+            // Garantimos que pegamos a lista de itens, mesmo que venha vazia do banco
+            const itens = resSpecs.data.data.itens || [];
+            
+            // Mapeamos os dados para garantir que os cálculos de GAP e SHARE 
+            // sejam processados assim que os dados chegam
+            tableData.value = itens.map(item => {
+                const venda = parseFloat(item.suaVendaEstimada) || 0;
+                const potencial = parseFloat(item.potencialLitros) || 0;
+                return {
+                    ...item,
+                    suaVendaEstimada: venda,
+                    gapLitros: potencial - venda,
+                    share: potencial > 0 ? ((venda / potencial) * 100).toFixed(2) : '0.00'
+                };
+            });
+        } else {
+            tableData.value = [];
         }
 
     } catch (e) {
-        console.error("Erro na integração:", e);
+        console.error("Erro na integração do Dashboard:", e);
+        tableData.value = []; // Limpa a tabela em caso de erro
     } finally {
         isLoading.value = false;
-        if (map.value) map.value.resize();
+        // Pequeno delay para garantir que o DOM renderizou antes do resize do mapa
+        setTimeout(() => {
+            if (map.value) map.value.resize();
+        }, 100);
     }
 };
 
