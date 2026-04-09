@@ -9,8 +9,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
 // const api = axios.create({ baseURL: 'http://localhost:3000/bi/oportunidades', timeout: 60000 });
+const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
 
 // --- ESTADOS REATIVOS ---
 const isLoading = ref(true);
@@ -23,7 +23,7 @@ const filters = reactive({
     acea: 'Todos',
     jaso: 'Todos',
     basico: 'Todos',
-    tipoVeiculo: ['LEVE'] // Array para multi-seleção
+    tipoVeiculo: ['LEVE']
 });
 
 const simuladorShare = reactive({
@@ -40,25 +40,80 @@ const stateNames = {
   'AC': 'Acre', 'AL': 'Alagoas', 'AM': 'Amazonas', 'AP': 'Amapá', 'BA': 'Bahia', 'CE': 'Ceará', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo', 'GO': 'Goiás', 'MA': 'Maranhão', 'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais', 'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco', 'PI': 'Piauí', 'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte', 'RS': 'Rio Grande do Sul', 'RO': 'Rondônia', 'RR': 'Roraima', 'SC': 'Santa Catarina', 'SP': 'São Paulo', 'SE': 'Sergipe', 'TO': 'Tocantins'
 };
 
-// --- CÁLCULOS ---
+// Variável para armazenar os dados geográficos dos estados
+const geojsonData = ref(null);
 
-// 1. Sua Venda Projetada: (Venda Digitada / Meses) * 12
-const suaVendaProjetada = computed(() => {
+// Função auxiliar para calcular os limites (bounds) de uma geometria (Polygon ou MultiPolygon)
+const getBounds = (geometry) => {
+    let coords = [];
+    if (geometry.type === 'Polygon') {
+        coords = geometry.coordinates[0];
+    } else if (geometry.type === 'MultiPolygon') {
+        geometry.coordinates.forEach(poly => {
+            poly[0].forEach(c => coords.push(c));
+        });
+    }
+    
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    coords.forEach(([lng, lat]) => {
+        if (lng < minLng) minLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lng > maxLng) maxLng = lng;
+        if (lat > maxLat) maxLat = lat;
+    });
+    return [[minLng, minLat], [maxLng, maxLat]];
+};
+
+// --- CÁLCULOS (REAL vs SIMULADO) ---
+
+/**
+ * 1. VENDA ANUALIZADA REAL (O que você perguntou)
+ * Baseado puramente nos campos do card amarelo: (Lts / Meses) * 12
+ */
+const vendaAnualizadaReal = computed(() => {
     if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
     return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
 });
 
-// 2. Market Share Atual (Baseado na Projeção anual vs Potencial da API)
-const marketShareCalculado = computed(() => {
-  if (!overviewData.value?.potencialConsumoLitrosAno || suaVendaProjetada.value <= 0) return '0.00';
-  const ms = (suaVendaProjetada.value / overviewData.value.potencialConsumoLitrosAno) * 100;
+/**
+ * 2. MARKET SHARE REAL
+ * Comparação da Venda Anualizada Real vs Potencial Total
+ */
+const marketShareReal = computed(() => {
+  if (!overviewData.value?.potencialConsumoLitrosAno || vendaAnualizadaReal.value <= 0) return '0.00';
+  const ms = (vendaAnualizadaReal.value / overviewData.value.potencialConsumoLitrosAno) * 100;
   return ms.toFixed(2);
 });
 
-// 3. Atualiza cálculos da linha na tabela (GAP e SHARE) quando o valor de venda estimada muda
+/**
+ * 3. VENDA OBJETIVO (SIMULAÇÃO)
+ * O quanto você venderia se atingisse o "Share Desejado"
+ * Baseado em: Potencial Total * (Share Desejado / 100)
+ */
+const vendaObjetivoSimulada = computed(() => {
+    const potencialTotal = overviewData.value?.potencialConsumoLitrosAno || 0;
+    const shareAlvo = simuladorShare.shareDesejado || 0;
+    return (potencialTotal * shareAlvo) / 100;
+});
+
+/**
+ * 4. Aplica a simulação proporcional na tabela
+ */
+const aplicarSimulacaoNaTabela = () => {
+    if (!tableData.value.length) return;
+    const shareAlvo = parseFloat(simuladorShare.shareDesejado) || 0;
+    
+    tableData.value.forEach(row => {
+        const vendaSimulada = (row.potencialLitros * shareAlvo) / 100;
+        row.suaVendaEstimada = Math.round(vendaSimulada);
+        row.gapLitros = Math.max(0, row.potencialLitros - row.suaVendaEstimada);
+        row.share = shareAlvo.toFixed(2);
+    });
+};
+
 const updateRowCalculations = (row) => {
     const venda = parseFloat(row.suaVendaEstimada) || 0;
-    row.gapLitros = row.potencialLitros - venda;
+    row.gapLitros = Math.max(0, row.potencialLitros - venda);
     row.share = row.potencialLitros > 0 ? ((venda / row.potencialLitros) * 100).toFixed(2) : '0.00';
 };
 
@@ -73,7 +128,6 @@ const toggleVehicleType = (typeId) => {
     }
 };
 
-// Busca dados específicos para cada uma das 3 colunas fixas do Simulador de Trocas
 const getTrocaData = (tipoBusca) => {
     if (!simuladorTrocasData.value || !Array.isArray(simuladorTrocasData.value)) {
         return { veiculos: 0, litrosAno: 0, trocasPorAno: 0 };
@@ -81,15 +135,12 @@ const getTrocaData = (tipoBusca) => {
     const found = simuladorTrocasData.value.find(s => 
         s.tipoVeiculo.toUpperCase().includes(tipoBusca.toUpperCase())
     );
-    // Se não encontrar dados na API para aquele tipo, retorna 0 mas mantém a estrutura
     return found || { veiculos: 0, litrosAno: 0, trocasPorAno: tipoBusca === 'LEVE' ? 1 : tipoBusca === 'PESADA' ? 3.8 : 3 };
 };
 
 const fetchDashboardData = async () => {
     isLoading.value = true;
     const ufParam = selectedUF.value === 'Todos' ? '' : selectedUF.value;
-    
-    // Parâmetros incluindo multi-seleção de veículos separada por vírgula
     const params = {
         ...filters,
         estado: ufParam,
@@ -108,15 +159,11 @@ const fetchDashboardData = async () => {
 
         if (resOverview.data.data) overviewData.value = resOverview.data.data;
         if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
-        
-        // Carrega dados da tabela (trazendo os valores de 'suaVendaEstimada' do endpoint)
         if (resSpecs.data.data) {
             tableData.value = resSpecs.data.data.itens || [];
+            aplicarSimulacaoNaTabela();
         }
-
-    } catch (e) {
-        console.error("Erro na integração:", e);
-    } finally {
+    } catch (e) { console.error(e); } finally { 
         isLoading.value = false;
         if (map.value) map.value.resize();
     }
@@ -135,8 +182,14 @@ const initMap = () => {
     center: [-52, -15], zoom: 2.8, attributionControl: false
   });
 
-  map.value.on('load', () => {
-    map.value.addSource('states', { type: 'geojson', data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson', generateId: true });
+  map.value.on('load', async () => {
+    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
+    
+    // Buscamos o dado para o mapa e para nossa variável local
+    const response = await fetch(url);
+    geojsonData.value = await response.json();
+
+    map.value.addSource('states', { type: 'geojson', data: geojsonData.value, generateId: true });
     map.value.addLayer({ id: 'states-fill', type: 'fill', source: 'states', paint: { 'fill-color': '#e97332', 'fill-opacity': ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1] }});
     map.value.addLayer({ id: 'states-borders', type: 'line', source: 'states', paint: { 'line-color': '#e97332', 'line-width': 1 }});
     
@@ -149,18 +202,36 @@ const initMap = () => {
 
 const updateMapHighlight = () => {
     if(!map.value || !map.value.isStyleLoaded()) return;
+    
+    // 1. Atualiza a cor (destaque)
     map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
+
+    // 2. Move a câmera
+    if (selectedUF.value !== 'Todos' && geojsonData.value) {
+        // Encontra o estado selecionado no nosso GeoJSON
+        const feature = geojsonData.value.features.find(f => f.properties.sigla === selectedUF.value);
+        if (feature) {
+            const bounds = getBounds(feature.geometry);
+            map.value.fitBounds(bounds, {
+                padding: 40,      // Espaçamento nas bordas do card
+                duration: 1500,   // Velocidade da animação em milisegundos
+                essential: true
+            });
+        }
+    } else {
+        // Se selecionar "Brasil Todo", volta para a visão geral do país
+        map.value.flyTo({
+            center: [-52, -15],
+            zoom: 2.8,
+            duration: 1500
+        });
+    }
 };
 
 // --- WATCHERS ---
-watch([selectedUF, () => filters.tipoVeiculo], () => { 
-    updateMapHighlight(); 
-    fetchDashboardData(); 
-}, { deep: true });
-
-watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => {
-    fetchDashboardData();
-});
+watch(() => simuladorShare.shareDesejado, () => { aplicarSimulacaoNaTabela(); });
+watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
+watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => { fetchDashboardData(); });
 
 onMounted(async () => {
     initMap();
@@ -175,7 +246,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 <template>
   <div class="dashboard-wrapper">
     
-    <!-- BARRA SUPERIOR DE FILTROS -->
     <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-3">
       <div v-if="apiFilters" class="d-flex gap-3">
         <div v-for="f in [{l:'VISCOSIDADE', k:'viscosidade'}, {l:'API', k:'api'}, {l:'ACEA', k:'acea'}, {l:'JASO', k:'jaso'}, {l:'BÁSICO', k:'basico'}]" :key="f.k" class="filter-item">
@@ -191,7 +261,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 
     <div class="main-content d-flex p-3 gap-3">
       
-      <!-- SIDEBAR -->
       <div class="sidebar d-flex flex-column gap-3">
         <div class="card border-0 shadow-sm p-3 rounded-4 bg-white">
             <h6 class="fw-bold mb-3 uppercase"><Filter :size="16" class="inline-block mr-1"/> Filtros</h6>
@@ -222,7 +291,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             <div ref="mapContainer" class="w-100 h-100"></div>
         </div>
 
-        <!-- SIMULADOR DE SHARE -->
+        <!-- SIMULADOR DE SHARE (REAL) -->
         <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
             <h6 class="fw-bold mb-2 uppercase" style="font-size: 11px;"><Calculator :size="16"/> Simulador de Share</h6>
             <div class="row g-2 mb-3 mt-2">
@@ -238,9 +307,15 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <input type="number" v-model="simuladorShare.mesesCorridos" class="form-control form-control-sm fw-bold">
                 </div>
             </div>
+            
+            <!-- EXIBIÇÃO DA VENDA ANUALIZADA REAL PARA NÃO PERDER A INFORMAÇÃO -->
+            <div class="small fw-bold text-muted mb-2 text-center">
+               Venda Anualizada Real: {{ fmtNum(vendaAnualizadaReal) }} Lts
+            </div>
+
             <div class="d-flex align-items-center justify-content-between mb-3 bg-white p-2 rounded-3 border">
-                <span class="fw-bold small">MARKET SHARE:</span>
-                <span class="fw-black text-orange fs-5">{{ marketShareCalculado }}%</span>
+                <span class="fw-bold small">MARKET SHARE REAL:</span>
+                <span class="fw-black text-orange fs-5">{{ marketShareReal }}%</span>
             </div>
             <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
             <div class="bg-white border rounded p-1 d-flex align-items-center">
@@ -250,19 +325,14 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
         </div>
       </div>
 
-      <!-- PAINEL CENTRAL -->
       <div class="content-grid flex-grow-1 d-flex flex-column gap-3">
-        
         <div class="row g-3">
-          <!-- CARD: Simulador de Trocas Anual por Tipo de Veículo -->
           <div class="col-lg-8">
             <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100">
                 <div class="px-2 mb-3">
                     <h6 class="fw-bold m-0 uppercase text-muted" style="font-size: 12px;">Simulador de Trocas Anual por Tipo de Veículo</h6>
                 </div>
                 <div class="row g-0 align-items-center">
-                    
-                    <!-- COLUNA LEVE -->
                     <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('LEVE')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Car class="text-orange" :size="48" />
@@ -283,8 +353,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             </div>
                         </div>
                     </div>
-
-                    <!-- COLUNA PESADA -->
                     <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('PESADA')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Truck class="text-orange" :size="48" />
@@ -305,8 +373,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             </div>
                         </div>
                     </div>
-
-                    <!-- COLUNA MOTO -->
                     <div class="col-4 px-4" :class="{'opacity-25': !filters.tipoVeiculo.includes('MOTO')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Bike class="text-orange" :size="48" />
@@ -327,29 +393,24 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             </div>
                         </div>
                     </div>
-
-                </div>
-                <div class="mt-auto pt-3 px-2 d-flex gap-2 align-items-center">
-                    <Info :size="14" class="text-muted"/>
-                    <small class="text-muted" style="font-size:9px">A quantidade de trocas apresentada, representa uma estimativa baseada na média nacional.</small>
                 </div>
             </div>
           </div>
 
-          <!-- CARD OVERVIEW -->
           <div class="col-lg-4">
             <div class="card border-0 shadow-sm rounded-4 overview-card text-white d-flex flex-column overflow-hidden h-100" style="background-color: #1a2332;">
               <div class="p-3 flex-grow-1">
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
-                  <h3 class="fw-bold m-0">{{ fmtNum(suaVendaProjetada) }}</h3>
-                  <p class="mb-0 small opacity-75">Sua Venda Projetada</p>
+                  <!-- PROJETADA BASEADA NO ALVO (SIMULADA) -->
+                  <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
+                  <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
               </div>
               <div class="p-3" style="background-color: #e97332;">
-                <h3 class="fw-bold m-0">{{ marketShareCalculado }}%</h3>
-                <p class="mb-3 small">Share Projetado</p>
+                <h3 class="fw-bold m-0">{{ simuladorShare.shareDesejado }}%</h3>
+                <p class="mb-3 small">Share Projetado (Alvo)</p>
                 <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
                 <p class="mb-0 small">Frota Eletiva</p>
               </div>
@@ -357,7 +418,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
           </div>
         </div>
 
-        <!-- TABELA DE ESPECIFICAÇÕES -->
         <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden flex-grow-1">
             <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
                 <h6 class="fw-bold m-0 uppercase">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
@@ -380,18 +440,11 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <td class="text-end fw-bold">{{ fmtNum(row.potencialLitros) }}</td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end">
-                                    <input type="number" 
-                                           v-model.number="row.suaVendaEstimada" 
-                                           @input="updateRowCalculations(row)"
-                                           class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" 
-                                           style="max-width: 110px;">
+                                    <input type="number" v-model.number="row.suaVendaEstimada" @input="updateRowCalculations(row)" class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" style="max-width: 110px;">
                                 </div>
                             </td>
                             <td class="text-end text-muted">{{ fmtNum(row.gapLitros) }}</td>
                             <td class="text-end pe-4"><span class="badge bg-light text-dark border">{{ row.share }}%</span></td>
-                        </tr>
-                        <tr v-if="tableData.length === 0 && !isLoading">
-                            <td colspan="5" class="text-center p-5 text-muted">Nenhum dado encontrado para os filtros selecionados.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -399,7 +452,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
         </div>
       </div>
     </div>
-    
     <div v-if="isLoading" class="loader-global"><div class="spinner-border text-orange"></div></div>
   </div>
 </template>
@@ -423,6 +475,5 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 .text-orange { color: #e97332 !important; }
 .border-orange-subtle { border-color: #fbd6c0 !important; }
 .btn-red-total { background-color: #ff0000; color: white; border: none; font-size: 11px; }
-
 input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
