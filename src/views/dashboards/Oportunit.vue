@@ -27,9 +27,9 @@ const filters = reactive({
 });
 
 const simuladorShare = reactive({
-  suaVendaAtualLitros: 1000,
-  mesesCorridos: 3,
-  shareDesejado: 15
+  suaVendaAtualLitros: 0,
+  mesesCorridos: 0,
+  shareDesejado: 0
 });
 
 const overviewData = ref({ potencialConsumoLitrosAno: 0, frotaEfetiva: 0 });
