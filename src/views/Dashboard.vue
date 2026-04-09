@@ -142,7 +142,8 @@ const openDetailedModal = async (type) => {
         const res = await api.get(type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos', { 
             params: { estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, tipoVeiculo: 'Todos', jaso: 'Todos' } 
         });
-        modalData.value = res.data.data.sort((a,b) => b.litros - a.litros).slice(0, 10);
+        // ALTERADO: Ordenando por .frota em vez de .litros
+        modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
     } catch (e) { console.error(e); } finally { isModalLoading.value = false; }
 };
 
@@ -428,7 +429,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                         maintainAspectRatio: false,
                         layout: {
                             padding: {
-                            top: 20 // Espaço extra para os valores não baterem no topo
+                            top: 3 // Espaço extra para os valores não baterem no topo
                             }
                         },
                         plugins: {
@@ -438,7 +439,8 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             align: 'start', // Alinha a legenda à ESQUERDA
                             labels: {
                                 boxWidth: 12,
-                                font: { size: 10 }
+                                font: { size: 10 },
+                                padding: 0
                             }
                             },
                             // Mantendo os valores acima das barras/linhas conforme solicitado antes
@@ -563,8 +565,8 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 />
                 <Pie 
     v-else-if="modalData" 
-    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.litros), backgroundColor: orangePalette }] }" 
-    :options="{ 
+    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.frota), backgroundColor: orangePalette }] }" 
+    :options="{
         responsive: true, 
         maintainAspectRatio: false,
         layout: {
