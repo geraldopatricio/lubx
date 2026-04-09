@@ -137,14 +137,29 @@ const handleChartClick = (event, elements, chartKey) => {
 
 const openDetailedModal = async (type) => {
     modalTitle.value = `Top 10 ${type} (Consolidado)`;
-    modalChartType.value = 'pie'; showModal.value = true; isModalLoading.value = true;
+    modalChartType.value = 'pie'; 
+    showModal.value = true; 
+    isModalLoading.value = true;
+    
     try {
-        const res = await api.get(type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos', { 
-            params: { estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, tipoVeiculo: 'Todos', jaso: 'Todos' } 
-        });
-        // ALTERADO: Ordenando por .frota em vez de .litros
+        // Criamos o objeto de parâmetros pegando os valores atuais dos filtros
+        const params = { 
+            estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, 
+            tipoVeiculo: filters.tipoVeiculo, // <--- AQUI: Agora ele usa o filtro selecionado
+            jaso: filters.jaso,               // Opcional: passar o JASO atual também
+            marca: filters.marca,             // Opcional: se quiser refinar ainda mais o modal
+        };
+
+        const endpoint = type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos';
+        const res = await api.get(endpoint, { params });
+        
+        // Ordenando por frota e pegando o Top 10
         modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
-    } catch (e) { console.error(e); } finally { isModalLoading.value = false; }
+    } catch (e) { 
+        console.error("Erro ao carregar dados do modal:", e); 
+    } finally { 
+        isModalLoading.value = false; 
+    }
 };
 
 const openStatesModal = () => { modalTitle.value = 'Volume por Estado (Completo)'; modalChartType.value = 'bar'; showModal.value = true; modalData.value = true; };
@@ -565,35 +580,60 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 />
                 <Pie 
     v-else-if="modalData" 
-    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.frota), backgroundColor: orangePalette }] }" 
+    :data="{ 
+        labels: modalData.map(i => i.label), 
+        datasets: [{ 
+            data: modalData.map(i => i.frota), 
+            backgroundColor: orangePalette,
+            borderWidth: 2
+        }] 
+    }" 
     :options="{
         responsive: true, 
         maintainAspectRatio: false,
         layout: {
-            padding: 40 // Espaço para os textos externos não cortarem
+            padding: {
+                top: 2,
+                bottom: 2,
+                left: 50,  // Aumentado para dar espaço às etiquetas
+                right: 50  // Aumentado para dar espaço às etiquetas
+            }
         },
-        radius: '70%', // Diminui a pizza para caber os textos
+        // Aumentamos o raio para o gráfico ocupar mais espaço
+        radius: '85%', 
         plugins: { 
             legend: { 
                 display: true, 
-                position: 'top',
-                labels: { usePointStyle: true, pointStyle: 'circle', font: { size: 10 } }
+                position: 'bottom', // Movido para baixo para sobrar espaço nas laterais
+                labels: { 
+                    usePointStyle: true, 
+                    pointStyle: 'circle', 
+                    padding: 5,
+                    font: { size: 10, family: 'Inter' } 
+                }
             }, 
             datalabels: { 
                 display: true,
                 anchor: 'end',
                 align: 'end',
-                offset: 15,
+                offset: 10, // Distância do texto para a fatia
                 color: '#444', 
                 textAlign: 'center', 
                 font: { 
-                    family: 'Inter, sans-serif', // <-- Força a fonte moderna aqui
+                    family: 'Inter, sans-serif',
                     weight: 'bold', 
-                    size: 10 
+                    size: 9 
                 }, 
                 formatter: (v, ctx) => { 
-                    // Mostra Nome e Volume (formatado)
-                    return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); 
+                    const label = ctx.chart.data.labels[ctx.dataIndex];
+                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                    const percent = ((v / total) * 100).toFixed(1);
+                    
+                    // Se a fatia for muito pequena (ex: < 3%), não mostra o texto para não encavalar
+                    if ((v / total) < 0.03) return null;
+
+                    // Quebra de linha entre nome e valor
+                    return label + '\n' + formatNum(v); 
                 } 
             } 
         } 
@@ -623,4 +663,26 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 .last-no-border:last-child { border-right: none !important; }
 .btn-close-custom { position: absolute; top: 20px; right: 20px; border: none; background: none; color: #888; }
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* Aumenta a altura interna do modal para o gráfico respirar */
+.modal-content {
+    max-height: 100vh; /* Não deixa o modal sair da tela */
+    display: flex;
+    flex-direction: column;
+}
+
+/* Garante que o container do gráfico tenha espaço */
+.modal-content > div:last-child {
+    flex-grow: 1;
+    min-height: 550px; /* Aumentamos de 400px para 450px */
+    padding-bottom: 2px;
+}
+
+/* Estilo para o título do modal ficar mais limpo */
+.modal-content h4 {
+    font-size: 1.5rem;
+    color: #1e293b;
+    margin-bottom: 1rem;
+}
+
 </style>
