@@ -10,7 +10,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
-// const api = axios.create({ baseURL: 'http://localhost:3000/bi/oportunidades', timeout: 60000 });
 
 // --- ESTADOS REATIVOS ---
 const isLoading = ref(true);
@@ -85,25 +84,35 @@ const marketShareReal = computed(() => {
   return ms.toFixed(2);
 });
 
+/**
+ * DETERMINA QUAL SHARE USAR PARA AS PROJEÇÕES (AJUSTE SOLICITADO)
+ * Se o usuário digitou share manual, usa ele. Se não, usa o real calculado.
+ */
+const shareEfetivoParaCalculo = computed(() => {
+    const manual = parseFloat(simuladorShare.shareDesejado) || 0;
+    if (manual > 0) return manual;
+    return parseFloat(marketShareReal.value) || 0;
+});
+
 const vendaObjetivoSimulada = computed(() => {
-    const share = parseFloat(simuladorShare.shareDesejado) || 0;
+    const share = shareEfetivoParaCalculo.value;
     const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
     return (share / 100) * potencial;
 });
 
-// --- FUNÇÕES DE LIMPEZA MÚTUA (AJUSTE SOLICITADO) ---
+// --- FUNÇÕES DE INTERAÇÃO (LIMPEZA MÚTUA) ---
 const focarVendaReal = () => {
-    simuladorShare.shareDesejado = 0; // Zera o projetado ao mexer no real
+    simuladorShare.shareDesejado = 0; 
 };
 
 const digitarShareDesejado = () => {
-    simuladorShare.suaVendaAtualLitros = 0; // Zera o real ao mexer no projetado
+    simuladorShare.suaVendaAtualLitros = 0;
     simuladorShare.mesesCorridos = 0;
 };
 
 const aplicarSimulacaoNaTabela = () => {
     if (!tableData.value.length) return;
-    const shareAlvo = parseFloat(simuladorShare.shareDesejado) || 0;
+    const shareAlvo = shareEfetivoParaCalculo.value;
     tableData.value.forEach(row => {
         const vendaSimulada = (row.potencialLitros * shareAlvo) / 100;
         row.suaVendaEstimada = Math.round(vendaSimulada);
@@ -205,7 +214,9 @@ const updateMapHighlight = () => {
     }
 };
 
-watch(() => simuladorShare.shareDesejado, () => { aplicarSimulacaoNaTabela(); });
+// Observa mudanças no Share para atualizar a tabela
+watch([shareEfetivoParaCalculo], () => { aplicarSimulacaoNaTabela(); });
+
 watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
 watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => { fetchDashboardData(); });
 
@@ -377,12 +388,14 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
+                  <!-- Ajustado para mostrar o cálculo baseado no modo ativo -->
                   <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
                   <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
               </div>
               <div class="p-3" style="background-color: #e97332;">
-                <h3 class="fw-bold m-0">{{ simuladorShare.shareDesejado }}%</h3>
+                <!-- Ajustado para mostrar o share baseado no modo ativo -->
+                <h3 class="fw-bold m-0">{{ shareEfetivoParaCalculo.toFixed(2) }}%</h3>
                 <p class="mb-3 small">Share Projetado (Alvo)</p>
                 <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
                 <p class="mb-0 small">Frota Eletiva</p>
@@ -430,6 +443,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 </template>
 
 <style scoped>
+/* Mesma estilização anterior preservada */
 .dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
 .top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
 .filter-item { display: flex; align-items: center; gap: 8px; }
