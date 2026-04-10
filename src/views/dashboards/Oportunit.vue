@@ -436,7 +436,15 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <td class="text-end fw-bold">{{ fmtNum(row.potencialLitros) }}</td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end">
-                                    <input type="number" v-model.number="row.suaVendaEstimada" @input="updateRowCalculations(row)" class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" style="max-width: 110px;">
+                                    <input type="text" 
+                                       :value="fmtNum(row.suaVendaEstimada)" 
+                                       @input="e => { 
+                                           const val = e.target.value.replace(/\D/g, ''); 
+                                           row.suaVendaEstimada = val ? parseInt(val) : 0; 
+                                           updateRowCalculations(row); 
+                                       }" 
+                                       class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" 
+                                       style="max-width: 110px;">
                                 </div>
                             </td>
                             <td class="text-end text-muted">{{ fmtNum(row.gapLitros) }}</td>
