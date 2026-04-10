@@ -9,8 +9,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
-// const api = axios.create({ baseURL: 'http://localhost:3000/bi/oportunidades', timeout: 60000 });
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
+// const api = axios.create({ baseURL: 'http://localhost:3000/bi/oportunidades', timeout: 60000 });
 
 // --- ESTADOS REATIVOS ---
 const isLoading = ref(true);
@@ -91,21 +91,15 @@ const vendaObjetivoSimulada = computed(() => {
     return (share / 100) * potencial;
 });
 
-// Funções para alternar entre os modos de cálculo
+// --- FUNÇÕES DE LIMPEZA MÚTUA (AJUSTE SOLICITADO) ---
 const focarVendaReal = () => {
-    simuladorShare.shareDesejado = 0;
+    simuladorShare.shareDesejado = 0; // Zera o projetado ao mexer no real
 };
 
 const digitarShareDesejado = () => {
-    simuladorShare.suaVendaAtualLitros = 0;
+    simuladorShare.suaVendaAtualLitros = 0; // Zera o real ao mexer no projetado
     simuladorShare.mesesCorridos = 0;
 };
-
-watch(marketShareReal, (newVal) => {
-    if (newVal && newVal !== '0.00' && (simuladorShare.suaVendaAtualLitros > 0)) {
-        simuladorShare.shareDesejado = parseFloat(newVal);
-    }
-});
 
 const aplicarSimulacaoNaTabela = () => {
     if (!tableData.value.length) return;
@@ -280,12 +274,12 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <input type="text" v-model="suaVendaFormatada" @focus="focarVendaReal" class="pbi-input-field">
+                        <input type="text" v-model="suaVendaFormatada" @focus="focarVendaReal" @input="focarVendaReal" class="pbi-input-field">
                     </div>
                 </div>
                 <div class="col-4">
                     <label class="fw-bold small">MESES</label>
-                    <input type="number" v-model="simuladorShare.mesesCorridos" @focus="focarVendaReal" class="form-control form-control-sm fw-bold">
+                    <input type="number" v-model="simuladorShare.mesesCorridos" @focus="focarVendaReal" @input="focarVendaReal" class="form-control form-control-sm fw-bold">
                 </div>
             </div>
             
@@ -299,7 +293,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             </div>
             <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
             <div class="bg-white border rounded p-1 d-flex align-items-center">
-                <input type="number" v-model="simuladorShare.shareDesejado" @input="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
+                <input type="number" v-model="simuladorShare.shareDesejado" @input="digitarShareDesejado" @focus="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
                 <span class="fw-bold fs-5 pe-2">%</span>
             </div>
         </div>
