@@ -31,10 +31,13 @@ const doughnutLabelsLine = {
         const total = realData.reduce((a, b) => a + b, 0);
         if (total === 0) return;
         
+        // Só desenha a linha se a fatia for maior que 0.5% para evitar poluição extrema
+        if ((realData[index] / total) < 0.005) return;
+
         const x1 = x + Math.cos(midAngle) * outerRadius;
         const y1 = y + Math.sin(midAngle) * outerRadius;
-        const x2 = x + Math.cos(midAngle) * (outerRadius + 15);
-        const y2 = y + Math.sin(midAngle) * (outerRadius + 15);
+        const x2 = x + Math.cos(midAngle) * (outerRadius + 20);
+        const y2 = y + Math.sin(midAngle) * (outerRadius + 20);
 
         ctx.strokeStyle = '#D1D5DB';
         ctx.lineWidth = 1;
@@ -47,7 +50,7 @@ const doughnutLabelsLine = {
   }
 };
 
-// REGISTRE O PLUGIN
+// REGISTRE OS PLUGINS
 ChartJS.register(
     CategoryScale, LinearScale, RadialLinearScale, BarElement, ArcElement, 
     PointElement, LineElement, BarController, LineController, Title, Tooltip, Legend, ChartDataLabels,
@@ -81,7 +84,6 @@ const stateNames = {
 };
 
 const orangePalette = ['#e97332', '#f4b393', '#fbe2d5', '#3b82f6', '#10b981', '#f59e0b', '#00bcd4'];
-
 const formatNum = (val) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
 // --- FUNÇÕES DE API ---
@@ -98,7 +100,6 @@ const loadData = async () => {
     isLoading.value = true;
     const ufParam = selectedUF.value === 'Todos' ? '' : selectedUF.value;
     try {
-        // AQUI: Sincronização de todos os filtros na carga principal
         const params = { estado: ufParam, ...filters };
         const res = await api.get(viewMode.value === 'executive' ? '/panorama' : '/analise-detalhada', { params });
         if (viewMode.value === 'executive') panorama.value = res.data.data;
@@ -106,6 +107,27 @@ const loadData = async () => {
     } catch (e) { console.error(e); } finally {
         isLoading.value = false;
         if (map.value) nextTick(() => map.value.resize());
+    }
+};
+
+const openDetailedModal = async (type) => {
+    modalTitle.value = `Top 10 ${type} (Filtrado)`;
+    modalChartType.value = 'pie'; 
+    showModal.value = true; 
+    isModalLoading.value = true;
+    
+    try {
+        const params = { 
+            estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, 
+            ...filters 
+        };
+        const endpoint = type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos';
+        const res = await api.get(endpoint, { params });
+        modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
+    } catch (e) { 
+        console.error("Erro ao carregar dados do modal:", e); 
+    } finally { 
+        isModalLoading.value = false; 
     }
 };
 
@@ -118,47 +140,16 @@ const handleChartClick = (event, elements, chartKey) => {
     if (chartKey === 'norma') filters.norma = label;
 };
 
-// AJUSTE SOLICITADO: MODAL COM PARAMETROS COMPLETOS
-const openDetailedModal = async (type) => {
-    modalTitle.value = `Top 10 ${type} (Filtrado)`;
-    modalChartType.value = 'pie'; 
-    showModal.value = true; 
-    isModalLoading.value = true;
-    
-    try {
-        // AQUI: Pegamos o estado atual de TODOS os filtros do topo para o Modal
-        const params = { 
-            estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, 
-            ...filters // Passa marca, modelo, ano, motor, viscosidade, etc.
-        };
-
-        const endpoint = type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos';
-        const res = await api.get(endpoint, { params });
-        
-        modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
-    } catch (e) { 
-        console.error("Erro ao carregar dados do modal:", e); 
-    } finally { 
-        isModalLoading.value = false; 
-    }
-};
-
 const openStatesModal = () => { modalTitle.value = 'Volume por Estado (Completo)'; modalChartType.value = 'bar'; showModal.value = true; modalData.value = true; };
 const openCitiesModal = () => { modalTitle.value = 'Top 15 Cidades (Volume Mi L)'; modalChartType.value = 'bar-cities'; showModal.value = true; modalData.value = true; };
 const clearFilters = () => { Object.keys(filters).forEach(k => { if (!k.startsWith('troca')) filters[k] = 'Todos'; }); };
 
-// --- NORMAS TOP 10 COM REGRA DE 20% ---
+// --- COMPUTEDS GRÁFICOS ---
 const normasChartData = computed(() => {
     if (!detalhada.value?.graficos?.norma) return { labels: [], datasets: [] };
-    const raw = detalhada.value.graficos.norma
-        .sort((a, b) => b.litros - a.litros)
-        .slice(0, 10);
-
+    const raw = detalhada.value.graficos.norma.sort((a, b) => b.litros - a.litros).slice(0, 10);
     const sumOthers = raw.filter(i => i.label !== 'SEM NORMA').reduce((a, b) => a + b.litros, 0);
-    const visualData = raw.map(i => {
-        if (i.label === 'SEM NORMA' && sumOthers > 0) return sumOthers / 4; 
-        return i.litros;
-    });
+    const visualData = raw.map(i => (i.label === 'SEM NORMA' && sumOthers > 0) ? sumOthers / 4 : i.litros);
     return {
         labels: raw.map(i => i.label),
         datasets: [{ data: visualData, realData: raw.map(i => i.litros), backgroundColor: orangePalette }]
@@ -168,7 +159,6 @@ const normasChartData = computed(() => {
 const getDoughnutOptions = (key) => ({
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 5, bottom: 5, left: 10, right: 10 } },
     radius: '70%', 
     cutout: '55%', 
     onClick: (e, el) => handleChartClick(e, el, key),
@@ -176,29 +166,21 @@ const getDoughnutOptions = (key) => ({
         legend: {
             display: true,
             position: 'bottom',
-            align: 'center',
-            labels: {
-                usePointStyle: true,
-                pointStyle: 'circle',
-                boxWidth: 8,
-                padding: 5, 
-                font: { family: "'Inter', sans-serif", size: 9, weight: '500' }
-            }
+            labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 5, font: { size: 9 } }
         },
         datalabels: {
             display: true,
             anchor: 'end',
             align: 'end',
-            offset: 10,
+            offset: 12,
             color: '#444',
             textAlign: 'center',
-            font: { family: "'Inter', sans-serif", size: 8, weight: 'bold' },
+            font: { size: 8, weight: 'bold' },
             formatter: (v, ctx) => {
                 const label = ctx.chart.data.labels[ctx.dataIndex];
                 const realData = ctx.dataset.realData || ctx.dataset.data;
                 const total = realData.reduce((a, b) => a + b, 0);
-                const val = realData[ctx.dataIndex];
-                const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                const pct = total > 0 ? ((realData[ctx.dataIndex] / total) * 100).toFixed(1) + '%' : '0%';
                 if (label === 'SEMISSINTÉTICO') return label;
                 return `${label}\n${pct}`;
             }
@@ -211,7 +193,6 @@ const totalLitrosCalculado = computed(() => {
     return detalhada.value.comparativosSegmento.reduce((acc, s) => acc + s.litrosAno, 0);
 });
 
-// --- CIDADES E TOP 30 ---
 const chartCidadesTop5 = computed(() => {
     const list = detalhada.value?.graficos?.topCidades || [];
     return { 
@@ -228,7 +209,6 @@ const chartCidadesFull = computed(() => {
     };
 });
 
-// --- VISCOSIDADE ---
 const chartViscosidade = computed(() => {
     if (!detalhada.value?.graficos?.viscosidade) return { labels: [], datasets: [] };
     const items = detalhada.value.graficos.viscosidade;
@@ -236,24 +216,8 @@ const chartViscosidade = computed(() => {
     return {
         labels: items.map(i => i.label),
         datasets: [
-            { 
-                type: 'line', 
-                label: '% Acc', 
-                borderColor: '#e97332', 
-                data: items.map(i => { acc += i.litros; return ((acc / total) * 100).toFixed(2); }), 
-                yAxisID: 'y1', 
-                tension: 0.2,
-                datalabels: { align: 'top', anchor: 'end', offset: -4, font: { weight: 'bold', size: 9 }, color: '#000' } 
-            },
-            { 
-                type: 'bar', 
-                label: 'Vol Mi', 
-                backgroundColor: '#3b82f6', 
-                data: items.map(i => i.litros / 1000000), 
-                yAxisID: 'y', 
-                barThickness: 28, 
-                datalabels: { formatter: v => v.toFixed(2), align: 'top', anchor: 'end' } 
-            }
+            { type: 'line', label: '% Acc', borderColor: '#e97332', data: items.map(i => { acc += i.litros; return ((acc / total) * 100).toFixed(2); }), yAxisID: 'y1', tension: 0.2, datalabels: { align: 'top', anchor: 'end', offset: -4, font: { weight: 'bold', size: 9 } } },
+            { type: 'bar', label: 'Vol Mi', backgroundColor: '#3b82f6', data: items.map(i => i.litros / 1000000), yAxisID: 'y', barThickness: 28, datalabels: { formatter: v => v.toFixed(2), align: 'top', anchor: 'end' } }
         ]
     };
 });
@@ -284,12 +248,9 @@ const initMap = () => {
     });
 };
 
-// --- WATCHERS ---
 watch([selectedUF, viewMode], () => { 
-    if (selectedUF.value === 'Todos') selectedStateName.value = 'Brasil'; 
-    else selectedStateName.value = stateNames[selectedUF.value]; 
-    updateMapHighlight();
-    loadData(); 
+    selectedStateName.value = selectedUF.value === 'Todos' ? 'Brasil' : stateNames[selectedUF.value]; 
+    updateMapHighlight(); loadData(); 
 });
 watch(filters, () => loadData(), { deep: true });
 onMounted(() => { initMap(); loadFilters(); loadData(); });
@@ -330,7 +291,6 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
         </div>
 
         <div class="container-fluid px-4 mt-2">
-            <!-- FILTROS TOPO -->
             <div class="card border-0 shadow-sm p-3 mb-3 bg-white rounded-3" v-if="apiFilters">
                 <div class="row g-2 mb-2">
                     <div v-for="f in [{l:'TIPO VEÍCULO', k:'tipoVeiculo'}, {l:'MARCA', k:'marca'}, {l:'VEÍCULO', k:'veiculo'}, {l:'MODELO', k:'modelo'}, {l:'ANO', k:'ano'}, {l:'MOTOR', k:'motor'}, {l:'COMBUSTÍVEL', k:'combustivel'}]" :key="f.k" class="col"><label class="filter-label">{{ f.l }}:</label><select v-model="filters[f.k]" class="form-select form-select-sm border-secondary-subtle"><option value="Todos">Todos</option><option v-for="o in apiFilters[f.k]" :key="o" :value="o">{{ o }}</option></select></div>
@@ -342,7 +302,6 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
             </div>
 
             <div v-if="detalhada">
-                <!-- CARDS -->
                 <div class="row g-3 mb-4">
                     <div v-for="k in detalhada.cardsTopo" :key="k.id" class="col-md-3">
                         <div class="card border-0 shadow-sm p-4 rounded-4 bg-white d-flex flex-row align-items-center justify-content-center gap-3" :class="{'card-white-kpi': k.id === 'marcas' || k.id === 'modelos'}" @click="(k.id === 'marcas' || k.id === 'modelos') ? openDetailedModal(k.label) : null">
@@ -355,41 +314,18 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                     </div>
                 </div>
 
-                <!-- GRÁFICOS MEIO -->
                 <div class="row g-2 mb-3">
                     <div class="col-lg-5"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white"><div class="row h-100 align-items-center"><div v-for="s in detalhada.comparativosSegmento" :key="s.id" class="col-4 border-end last-no-border px-3"><div class="d-flex align-items-center gap-2 mb-3"><component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange" :size="42" /><div class="lh-sm"><strong>{{ formatNum(s.veiculos) }}</strong><small class="text-muted d-block" style="font-size:10px">Veículos</small></div></div><div class="mb-3 border-top pt-2"><strong>{{ formatNum(s.litrosAno) }}</strong><small class="text-muted d-block" style="font-size:10px">Litros / ano</small></div><div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm"><small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small><input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters[s.id.includes('leve') ? 'trocaLeve' : (s.id.includes('pesada') ? 'trocaPesada' : 'trocaMoto')]"></div></div></div></div></div>
-                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;">
-                    <Bar :data="chartEstados" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 20 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' } } } }" />
-                    </div></div></div>
-                    <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;">
-                    <Bar :data="chartCidadesTop5" :options="{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 30 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'right', font: { weight: 'bold' } } } }" />
-                    </div></div></div>
+                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;"><Bar :data="chartEstados" :options="{ responsive: true, maintainAspectRatio: false, layout:{padding:{top:20}}, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' } } } }" /></div></div></div>
+                    <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;"><Bar :data="chartCidadesTop5" :options="{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout:{padding:{right:30}}, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'right', font: { weight: 'bold' } } } }" /></div></div></div>
                 </div>
 
-                <!-- GRÁFICOS BAIXO -->
                 <div class="row g-2">
-                    <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;">
-                    <Bar :data="chartViscosidade" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 3 } }, plugins: { legend: { display: true, position: 'top', align: 'start', labels: { boxWidth: 12, font: { size: 10 }, padding: 0 } }, datalabels: { anchor: 'end', align: 'top', offset: 2, font: { weight: 'bold', size: 10 } } }, scales: { y: { beginAtZero: true }, y1: { position: 'right', grid: { display: false }, min: 0, max: 110 } } }" />
-                    </div></div></div>
+                    <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;"><Bar :data="chartViscosidade" :options="{ responsive: true, maintainAspectRatio: false, layout:{padding:{top:3}}, plugins: { legend: { display: true, position: 'top', align: 'start' }, datalabels: { anchor: 'end', align: 'top', offset: 2, font: { weight: 'bold', size: 10 } } }, scales: { y: { beginAtZero: true }, y1: { position: 'right', grid: { display: false }, min: 0, max: 110 } } }" /></div></div></div>
                     <div class="col-md-7"><div class="row g-2 h-100">
-                            <div class="col-4">
-                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
-                                    <small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small>
-                                    <div style="height: 250px;"><Doughnut :data="{ labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), datasets: [{ data: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('basico')" /></div>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
-                                    <small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small>
-                                    <div style="height: 250px;"><Doughnut :data="{ labels: detalhada.graficos.segmento.map(i=>i.label), datasets: [{ data: detalhada.graficos.segmento.map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('segmento')" /></div>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
-                                    <small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small>
-                                    <div style="height: 250px;"><Doughnut :data="normasChartData" :options="getDoughnutOptions('norma')" /></div>
-                                </div>
-                            </div>
+                            <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small><div style="height: 250px;"><Doughnut :data="{ labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), datasets: [{ data: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('basico')" /></div></div></div>
+                            <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small><div style="height: 250px;"><Doughnut :data="{ labels: detalhada.graficos.segmento.map(i=>i.label), datasets: [{ data: detalhada.graficos.segmento.map(i=>i.litros), backgroundColor: orangePalette }] }" :options="getDoughnutOptions('segmento')" /></div></div></div>
+                            <div class="col-4"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center"><small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small><div style="height: 250px;"><Doughnut :data="normasChartData" :options="getDoughnutOptions('norma')" /></div></div></div>
                     </div></div>
                 </div>
             </div>
@@ -405,7 +341,58 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
             <div v-else style="height: 400px;">
                 <Bar v-if="modalChartType === 'bar-cities'" :data="chartCidadesFull" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 30 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', offset: 4, font: { weight: 'bold', size: 10 }, formatter: (v) => v.toFixed(2) } } }" />
                 <Bar v-else-if="modalChartType === 'bar'" :data="chartEstadosFull" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 30 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', offset: 4, font: { weight: 'bold', size: 10 }, formatter: (v) => v.toFixed(2) } } }" />
-                <Pie v-else-if="modalData" :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.frota), backgroundColor: orangePalette, borderWidth: 2 }] }" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 2, bottom: 2, left: 50, right: 50 } }, radius: '85%', plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 5, font: { size: 10, family: 'Inter' } } }, datalabels: { display: true, anchor: 'end', align: 'end', offset: 10, color: '#444', textAlign: 'center', font: { family: 'Inter, sans-serif', weight: 'bold', size: 9 }, formatter: (v, ctx) => { const label = ctx.chart.data.labels[ctx.dataIndex]; const total = ctx.dataset.data.reduce((a, b) => a + b, 0); if ((v / total) < 0.03) return null; return label + '\n' + formatNum(v); } } } }" />
+                
+                <!-- PIE CHART MODAL - AJUSTADO PARA PERCENTUAIS E TÍTULOS PEQUENOS -->
+                <Pie v-else-if="modalData" 
+                    :data="{ 
+                        labels: modalData.map(i => i.label), 
+                        datasets: [{ 
+                            data: modalData.map(i => i.frota), 
+                            backgroundColor: orangePalette,
+                            borderWidth: 2
+                        }] 
+                    }" 
+                    :options="{
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        layout: { padding: { top: 2, bottom: 2, left: 60, right: 60 } },
+                        radius: '85%', 
+                        plugins: { 
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.label || '';
+                                        const value = context.raw || 0;
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2) + '%';
+                                        return `${label}: ${formatNum(value)} (${percentage})`;
+                                    }
+                                }
+                            },
+                            legend: { 
+                                display: true, 
+                                position: 'bottom',
+                                labels: { usePointStyle: true, pointStyle: 'circle', padding: 5, font: { size: 10 } }
+                            }, 
+                            datalabels: { 
+                                display: true,
+                                anchor: 'end',
+                                align: 'end',
+                                offset: 15, 
+                                color: '#444', 
+                                textAlign: 'center', 
+                                font: { weight: 'bold', size: 9 }, 
+                                formatter: (v, ctx) => { 
+                                    const label = ctx.chart.data.labels[ctx.dataIndex];
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    // AJUSTE: Baixado o threshold para mostrar marcas pequenas
+                                    if ((v / total) < 0.005) return null; 
+                                    return label + '\n' + formatNum(v); 
+                                } 
+                            } 
+                        } 
+                    }" 
+                />
             </div>
         </div>
     </div>
