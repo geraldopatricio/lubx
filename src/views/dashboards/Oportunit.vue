@@ -69,7 +69,7 @@ const suaVendaFormatada = computed({
     return new Intl.NumberFormat('pt-BR').format(simuladorShare.suaVendaAtualLitros);
   },
   set(newValue) {
-    const numericValue = newValue.replace(/\D/g, "");
+    const numericValue = String(newValue).replace(/\D/g, "");
     simuladorShare.suaVendaAtualLitros = numericValue ? parseInt(numericValue) : 0;
   }
 });
@@ -85,20 +85,24 @@ const marketShareReal = computed(() => {
   return ms.toFixed(2);
 });
 
-/**
- * AJUSTE SOLICITADO: Venda Objetivo baseada no Share Desejado e Potencial
- */
 const vendaObjetivoSimulada = computed(() => {
     const share = parseFloat(simuladorShare.shareDesejado) || 0;
     const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
     return (share / 100) * potencial;
 });
 
-/**
- * AJUSTE SOLICITADO: Quando o Market Share Real mudar, atualiza o Share Desejado automaticamente
- */
+// Funções para alternar entre os modos de cálculo
+const focarVendaReal = () => {
+    simuladorShare.shareDesejado = 0;
+};
+
+const digitarShareDesejado = () => {
+    simuladorShare.suaVendaAtualLitros = 0;
+    simuladorShare.mesesCorridos = 0;
+};
+
 watch(marketShareReal, (newVal) => {
-    if (newVal && newVal !== '0.00') {
+    if (newVal && newVal !== '0.00' && (simuladorShare.suaVendaAtualLitros > 0)) {
         simuladorShare.shareDesejado = parseFloat(newVal);
     }
 });
@@ -276,12 +280,12 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <input type="text" v-model="suaVendaFormatada" class="pbi-input-field">
+                        <input type="text" v-model="suaVendaFormatada" @focus="focarVendaReal" class="pbi-input-field">
                     </div>
                 </div>
                 <div class="col-4">
                     <label class="fw-bold small">MESES</label>
-                    <input type="number" v-model="simuladorShare.mesesCorridos" class="form-control form-control-sm fw-bold">
+                    <input type="number" v-model="simuladorShare.mesesCorridos" @focus="focarVendaReal" class="form-control form-control-sm fw-bold">
                 </div>
             </div>
             
@@ -295,7 +299,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             </div>
             <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
             <div class="bg-white border rounded p-1 d-flex align-items-center">
-                <input type="number" v-model="simuladorShare.shareDesejado" class="form-control border-0 text-center fw-bold fs-4">
+                <input type="number" v-model="simuladorShare.shareDesejado" @input="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
                 <span class="fw-bold fs-5 pe-2">%</span>
             </div>
         </div>
