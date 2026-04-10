@@ -61,26 +61,19 @@ const getBounds = (geometry) => {
     return [[minLng, minLat], [maxLng, maxLat]];
 };
 
-// --- NOVOS COMPUTED PARA FORMATAÇÃO E CÁLCULO SOLICITADO ---
+// --- COMPUTED PARA FORMATAÇÃO E CÁLCULO ---
 
-/**
- * 1. TRATAMENTO DO INPUT FORMATADO (Padrão milhar BR)
- */
 const suaVendaFormatada = computed({
   get() {
     if (!simuladorShare.suaVendaAtualLitros) return "";
     return new Intl.NumberFormat('pt-BR').format(simuladorShare.suaVendaAtualLitros);
   },
   set(newValue) {
-    // Remove pontos e converte de volta para número
     const numericValue = newValue.replace(/\D/g, "");
     simuladorShare.suaVendaAtualLitros = numericValue ? parseInt(numericValue) : 0;
   }
 });
 
-/**
- * 2. VENDA ANUALIZADA REAL
- */
 const vendaAnualizadaReal = computed(() => {
     if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
     return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
@@ -93,13 +86,21 @@ const marketShareReal = computed(() => {
 });
 
 /**
- * 3. VENDA OBJETIVO (AJUSTADO CONFORME SOLICITAÇÃO)
- * Lógica: (Venda * Meses) / 12
+ * AJUSTE SOLICITADO: Venda Objetivo baseada no Share Desejado e Potencial
  */
 const vendaObjetivoSimulada = computed(() => {
-    const venda = simuladorShare.suaVendaAtualLitros || 0;
-    const meses = simuladorShare.mesesCorridos || 0;
-    return (venda / meses) * 12;
+    const share = parseFloat(simuladorShare.shareDesejado) || 0;
+    const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
+    return (share / 100) * potencial;
+});
+
+/**
+ * AJUSTE SOLICITADO: Quando o Market Share Real mudar, atualiza o Share Desejado automaticamente
+ */
+watch(marketShareReal, (newVal) => {
+    if (newVal && newVal !== '0.00') {
+        simuladorShare.shareDesejado = parseFloat(newVal);
+    }
 });
 
 const aplicarSimulacaoNaTabela = () => {
@@ -119,7 +120,6 @@ const updateRowCalculations = (row) => {
     row.share = row.potencialLitros > 0 ? ((venda / row.potencialLitros) * 100).toFixed(2) : '0.00';
 };
 
-// --- FUNÇÕES DE LÓGICA ---
 const toggleVehicleType = (typeId) => {
     const index = filters.tipoVeiculo.indexOf(typeId);
     if (index > -1) {
@@ -269,7 +269,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             <div ref="mapContainer" class="w-100 h-100"></div>
         </div>
 
-        <!-- SIMULADOR DE SHARE (REAL) -->
         <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
             <h6 class="fw-bold mb-2 uppercase" style="font-size: 11px;"><Calculator :size="16"/> Simulador de Share</h6>
             <div class="row g-2 mb-3 mt-2">
@@ -277,7 +276,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <!-- AJUSTADO: type para text e v-model para a versão formatada -->
                         <input type="text" v-model="suaVendaFormatada" class="pbi-input-field">
                     </div>
                 </div>
@@ -381,7 +379,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
-                  <!-- EXIBE O RESULTADO DO NOVO CÁLCULO -->
                   <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
                   <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
@@ -435,7 +432,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 </template>
 
 <style scoped>
-/* Estilos mantidos originais */
 .dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
 .top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
 .filter-item { display: flex; align-items: center; gap: 8px; }
