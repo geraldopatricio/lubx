@@ -73,11 +73,19 @@ const suaVendaFormatada = computed({
   }
 });
 
+/**
+ * CÁLCULO DE ANUALIZAÇÃO (Sua Venda Real Projetada p/ 12 meses)
+ * Fórmua: (Venda / Meses) * 12
+ */
 const vendaAnualizadaReal = computed(() => {
     if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
     return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
 });
 
+/**
+ * MARKET SHARE REAL 
+ * Fórmula: (Venda Anualizada / Potencial do Filtro) * 100
+ */
 const marketShareReal = computed(() => {
   if (!overviewData.value?.potencialConsumoLitrosAno || vendaAnualizadaReal.value <= 0) return '0.00';
   const ms = (vendaAnualizadaReal.value / overviewData.value.potencialConsumoLitrosAno) * 100;
@@ -85,8 +93,7 @@ const marketShareReal = computed(() => {
 });
 
 /**
- * DETERMINA QUAL SHARE USAR PARA AS PROJEÇÕES (AJUSTE SOLICITADO)
- * Se o usuário digitou share manual, usa ele. Se não, usa o real calculado.
+ * SHARE EFETIVO (O que será usado para preencher a tabela e cards de alvo)
  */
 const shareEfetivoParaCalculo = computed(() => {
     const manual = parseFloat(simuladorShare.shareDesejado) || 0;
@@ -94,13 +101,20 @@ const shareEfetivoParaCalculo = computed(() => {
     return parseFloat(marketShareReal.value) || 0;
 });
 
+/**
+ * SUA VENDA PROJETADA (ALVO) - O CARD PRINCIPAL
+ * Se tiver share manual, calcula (Share/100)*Potencial. 
+ * Se não, usa a Venda Anualizada Real.
+ */
 const vendaObjetivoSimulada = computed(() => {
-    const share = shareEfetivoParaCalculo.value;
-    const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
-    return (share / 100) * potencial;
+    if (parseFloat(simuladorShare.shareDesejado) > 0) {
+        const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
+        return (simuladorShare.shareDesejado / 100) * potencial;
+    }
+    return vendaAnualizadaReal.value;
 });
 
-// --- FUNÇÕES DE INTERAÇÃO (LIMPEZA MÚTUA) ---
+// --- FUNÇÕES DE LIMPEZA MÚTUA ---
 const focarVendaReal = () => {
     simuladorShare.shareDesejado = 0; 
 };
@@ -214,9 +228,7 @@ const updateMapHighlight = () => {
     }
 };
 
-// Observa mudanças no Share para atualizar a tabela
-watch([shareEfetivoParaCalculo], () => { aplicarSimulacaoNaTabela(); });
-
+watch([shareEfetivoParaCalculo, () => overviewData.value.potencialConsumoLitrosAno], () => { aplicarSimulacaoNaTabela(); });
 watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
 watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => { fetchDashboardData(); });
 
@@ -304,7 +316,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             </div>
             <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
             <div class="bg-white border rounded p-1 d-flex align-items-center">
-                <input type="number" v-model="simuladorShare.shareDesejado" @input="digitarShareDesejado" @focus="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
+                <input type="number" v-model="simuladorShare.shareDesejado" @focus="digitarShareDesejado" @input="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
                 <span class="fw-bold fs-5 pe-2">%</span>
             </div>
         </div>
@@ -388,13 +400,11 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
-                  <!-- Ajustado para mostrar o cálculo baseado no modo ativo -->
                   <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
                   <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
               </div>
               <div class="p-3" style="background-color: #e97332;">
-                <!-- Ajustado para mostrar o share baseado no modo ativo -->
                 <h3 class="fw-bold m-0">{{ shareEfetivoParaCalculo.toFixed(2) }}%</h3>
                 <p class="mb-3 small">Share Projetado (Alvo)</p>
                 <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
@@ -443,7 +453,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 </template>
 
 <style scoped>
-/* Mesma estilização anterior preservada */
 .dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
 .top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
 .filter-item { display: flex; align-items: center; gap: 8px; }
