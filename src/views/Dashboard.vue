@@ -147,32 +147,58 @@ const clearFilters = () => { Object.keys(filters).forEach(k => { if (!k.startsWi
 // --- COMPUTEDS GRÁFICOS ---
 const normasChartData = computed(() => {
     if (!detalhada.value?.graficos?.norma) return { labels: [], datasets: [] };
-    const raw = detalhada.value.graficos.norma.sort((a, b) => b.litros - a.litros).slice(0, 10);
-    const sumOthers = raw.filter(i => i.label !== 'SEM NORMA').reduce((a, b) => a + b.litros, 0);
-    const visualData = raw.map(i => (i.label === 'SEM NORMA' && sumOthers > 0) ? sumOthers / 4 : i.litros);
+
+    // 1. Filtramos para REMOVER qualquer item com o label 'SEM NORMA'
+    // 2. Ordenamos do maior para o menor volume
+    // 3. Pegamos os Top 10 que restaram
+    const raw = detalhada.value.graficos.norma
+        .filter(i => i.label !== 'SEM NORMA') 
+        .sort((a, b) => b.litros - a.litros)
+        .slice(0, 10);
+
     return {
         labels: raw.map(i => i.label),
-        datasets: [{ data: visualData, realData: raw.map(i => i.litros), backgroundColor: orangePalette }]
+        datasets: [{ 
+            data: raw.map(i => i.litros), 
+            realData: raw.map(i => i.litros), 
+            backgroundColor: orangePalette 
+        }]
     };
 });
 
 const getDoughnutOptions = (key) => ({
     responsive: true,
     maintainAspectRatio: false,
-    radius: '70%', 
+    // Reduzimos um pouco o raio (de 70% para 60%) para dar mais espaço global
+    radius: '60%', 
     cutout: '55%', 
+    // ADICIONADO: Padding para garantir que o texto não saia da área do canvas
+    layout: {
+        padding: {
+            left: 10,   // Espaço para as iniciais na esquerda
+            right: 10,  // Espaço para os textos na direita
+            top: 5,    // Espaço para os textos no topo
+            bottom: 5
+        }
+    },
     onClick: (e, el) => handleChartClick(e, el, key),
     plugins: {
         legend: {
             display: true,
             position: 'bottom',
-            labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 5, font: { size: 9 } }
+            labels: { 
+                usePointStyle: true, 
+                pointStyle: 'circle', 
+                boxWidth: 8, 
+                padding: 10, // Aumentado para não grudar no gráfico
+                font: { size: 9 } 
+            }
         },
         datalabels: {
             display: true,
             anchor: 'end',
             align: 'end',
-            offset: 12,
+            offset: 8, // Reduzido levemente para o texto não fugir tanto
             color: '#444',
             textAlign: 'center',
             font: { size: 8, weight: 'bold' },
@@ -181,8 +207,10 @@ const getDoughnutOptions = (key) => ({
                 const realData = ctx.dataset.realData || ctx.dataset.data;
                 const total = realData.reduce((a, b) => a + b, 0);
                 const pct = total > 0 ? ((realData[ctx.dataIndex] / total) * 100).toFixed(1) + '%' : '0%';
-                if (label === 'SEMISSINTÉTICO') return label;
-                return `${label}\n${pct}`;
+                
+                // Se o nome for muito longo (como algumas normas), quebra em duas linhas
+                const formattedLabel = label.length > 15 ? label.substring(0, 15) + '...' : label;
+                return `${formattedLabel}\n${pct}`;
             }
         }
     }
@@ -316,7 +344,48 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 
                 <div class="row g-2 mb-3">
                     <div class="col-lg-5"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white"><div class="row h-100 align-items-center"><div v-for="s in detalhada.comparativosSegmento" :key="s.id" class="col-4 border-end last-no-border px-3"><div class="d-flex align-items-center gap-2 mb-3"><component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange" :size="42" /><div class="lh-sm"><strong>{{ formatNum(s.veiculos) }}</strong><small class="text-muted d-block" style="font-size:10px">Veículos</small></div></div><div class="mb-3 border-top pt-2"><strong>{{ formatNum(s.litrosAno) }}</strong><small class="text-muted d-block" style="font-size:10px">Litros / ano</small></div><div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm"><small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small><input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters[s.id.includes('leve') ? 'trocaLeve' : (s.id.includes('pesada') ? 'trocaPesada' : 'trocaMoto')]"></div></div></div></div></div>
-                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;"><Bar :data="chartEstados" :options="{ responsive: true, maintainAspectRatio: false, layout:{padding:{top:20}}, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' } } } }" /></div></div></div>
+                    <!-- ESTADOS (Top 10) -->
+                    <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal">
+                        <small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small>
+                        <div style="height: 180px;">
+                        <Bar 
+                            :data="chartEstados" 
+                            :options="{ 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            layout: { padding: { top: 15, bottom: 0 } }, 
+                            plugins: { 
+                                legend: { display: false }, 
+                                datalabels: { 
+                                anchor: 'end', 
+                                align: 'top', 
+                                offset: -2,
+                                font: { weight: 'bold', size: 9 } // Diminui fonte dos números no topo
+                                } 
+                            },
+                            scales: {
+                                x: {
+                                ticks: {
+                                    font: { size: 8 }, // Diminui fonte dos nomes dos estados (Eixo X)
+                                    maxRotation: 45,
+                                    minRotation: 45
+                                },
+                                grid: { display: false }
+                                },
+                                y: {
+                                ticks: {
+                                    font: { size: 8 }, // Diminui fonte da escala lateral (Eixo Y)
+                                    padding: 2
+                                },
+                                beginAtZero: true
+                                }
+                            }
+                            }" 
+                        />
+                        </div>
+                    </div>
+                    </div>
                     <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;"><Bar :data="chartCidadesTop5" :options="{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout:{padding:{right:30}}, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'right', font: { weight: 'bold' } } } }" /></div></div></div>
                 </div>
 
@@ -334,7 +403,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
 
     <!-- MODAL -->
     <div v-if="showModal" class="modal-overlay d-flex align-items-center justify-content-center" @click.self="showModal = false">
-        <div class="modal-content bg-white p-5 rounded-4 shadow-lg position-relative" :style="{ width: (modalChartType === 'bar' || modalChartType === 'bar-cities') ? '950px' : '550px' }">
+        <div class="modal-content bg-white p-5 rounded-4 shadow-lg position-relative" :style="{ width: (modalChartType === 'bar' || modalChartType === 'bar-cities') ? '950px' : '750px' }">
             <button @click="showModal = false" class="btn-close-custom"><X :size="20"/></button>
             <div class="text-center mb-4"><h4 class="fw-bold text-dark m-0">{{ modalTitle }}</h4></div>
             <div v-if="isModalLoading" class="text-center p-5"><div class="spinner-border text-orange"></div></div>
@@ -342,7 +411,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                 <Bar v-if="modalChartType === 'bar-cities'" :data="chartCidadesFull" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 30 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', offset: 4, font: { weight: 'bold', size: 10 }, formatter: (v) => v.toFixed(2) } } }" />
                 <Bar v-else-if="modalChartType === 'bar'" :data="chartEstadosFull" :options="{ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 30 } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', offset: 4, font: { weight: 'bold', size: 10 }, formatter: (v) => v.toFixed(2) } } }" />
                 
-                <!-- PIE CHART MODAL - AJUSTADO PARA PERCENTUAIS E TÍTULOS PEQUENOS -->
+                <!-- PIE CHART MODAL - AJUSTADO PARA NÃO SOBREPOR E NÃO CORTAR -->
                 <Pie v-else-if="modalData" 
                     :data="{ 
                         labels: modalData.map(i => i.label), 
@@ -355,8 +424,18 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                     :options="{
                         responsive: true, 
                         maintainAspectRatio: false,
-                        layout: { padding: { top: 2, bottom: 2, left: 60, right: 60 } },
-                        radius: '85%', 
+                        // Aumentamos o padding global para o texto ter espaço nas bordas
+                        layout: { 
+                            padding: { 
+                                top: 50, 
+                                bottom: 50, 
+                                left: 110, 
+                                right: 110 
+                            } 
+                        },
+                        // Reduzimos o raio do gráfico levemente (de 85% para 70%) 
+                        // para dar mais 'respiro' para as etiquetas dentro do canvas
+                        radius: '70%', 
                         plugins: { 
                             tooltip: {
                                 callbacks: {
@@ -372,22 +451,31 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             legend: { 
                                 display: true, 
                                 position: 'bottom',
-                                labels: { usePointStyle: true, pointStyle: 'circle', padding: 5, font: { size: 10 } }
+                                labels: { usePointStyle: true, pointStyle: 'circle', padding: 15, font: { size: 11 } }
                             }, 
                             datalabels: { 
                                 display: true,
                                 anchor: 'end',
                                 align: 'end',
-                                offset: 15, 
                                 color: '#444', 
                                 textAlign: 'center', 
-                                font: { weight: 'bold', size: 9 }, 
+                                font: { weight: 'bold', size: 10 }, 
+                                // TÉCNICA DE ESCALONAMENTO (STAGGERING):
+                                // Alterna a distância de cada etiqueta para evitar colisão lateral
+                                offset: (ctx) => {
+                                    const index = ctx.dataIndex;
+                                    // Alterna entre 10, 40 e 70 pixels de distância
+                                    const offsets = [10, 40, 70];
+                                    return offsets[index % 3];
+                                },
                                 formatter: (v, ctx) => { 
                                     const label = ctx.chart.data.labels[ctx.dataIndex];
                                     const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                    // AJUSTE: Baixado o threshold para mostrar marcas pequenas
-                                    if ((v / total) < 0.005) return null; 
-                                    return label + '\n' + formatNum(v); 
+                                    if ((v / total) < 0.001) return null; 
+                                    
+                                    // Se o nome for muito grande, podemos quebrar a linha ou limitar
+                                    const shortLabel = label.length > 15 ? label.substring(0, 15) + '...' : label;
+                                    return shortLabel + '\n' + formatNum(v); 
                                 } 
                             } 
                         } 
