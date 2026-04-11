@@ -352,37 +352,47 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                         <Bar 
                             :data="chartEstados" 
                             :options="{ 
-                            responsive: true, 
-                            maintainAspectRatio: false, 
-                            layout: { padding: { top: 15, bottom: 0 } }, 
-                            plugins: { 
+                                responsive: true, 
+                                maintainAspectRatio: false, 
+                                layout: { 
+                                padding: { 
+                                    top: 25,    // Aumentamos o respiro interno superior
+                                    bottom: 0 
+                                } 
+                                }, 
+                                plugins: { 
                                 legend: { display: false }, 
                                 datalabels: { 
-                                anchor: 'end', 
-                                align: 'top', 
-                                offset: -2,
-                                font: { weight: 'bold', size: 9 } // Diminui fonte dos números no topo
+                                    anchor: 'end', 
+                                    align: 'top', 
+                                    offset: 2,  // Espaço entre o número e a barra
+                                    font: { weight: 'bold', size: 9 } 
                                 } 
-                            },
-                            scales: {
+                                },
+                                scales: {
                                 x: {
-                                ticks: {
-                                    font: { size: 8 }, // Diminui fonte dos nomes dos estados (Eixo X)
+                                    ticks: {
+                                    font: { size: 8.5 }, // Fonte pequena para os nomes
                                     maxRotation: 45,
                                     minRotation: 45
-                                },
-                                grid: { display: false }
+                                    },
+                                    grid: { display: false }
                                 },
                                 y: {
-                                ticks: {
-                                    font: { size: 8 }, // Diminui fonte da escala lateral (Eixo Y)
-                                    padding: 2
-                                },
-                                beginAtZero: true
+                                    // CHAVE DA SOLUÇÃO: Adiciona 15% de espaço extra acima do maior valor
+                                    grace: '15%', 
+                                    beginAtZero: true,
+                                    ticks: {
+                                    font: { size: 8 },
+                                    stepSize: 50 // Ajuda a manter as linhas de grade limpas
+                                    },
+                                    grid: {
+                                    color: '#f1f1f1' // Linhas de fundo bem suaves
+                                    }
                                 }
-                            }
+                                }
                             }" 
-                        />
+                            />
                         </div>
                     </div>
                     </div>
