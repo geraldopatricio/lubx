@@ -1,455 +1,281 @@
 <script setup>
-import { ref, computed, onMounted, watch, reactive } from 'vue';
-import axios from 'axios';
-import { 
-  Car, Bike, Truck, Calculator, Info, Filter, 
-  MapPin, Eraser, List, ExternalLink, ArrowLeft 
-} from 'lucide-vue-next'; 
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import { ref, reactive, onMounted, watch, computed } from 'vue';
 
-// --- CONFIGURAÇÃO API ---
-const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
+// const API_BASE = 'http://localhost:3000/bi/ipb';
+const API_BASE = 'https://lubx-api.lubconsulta.com.br/bi/ipb';
 
-// --- ESTADOS REATIVOS ---
-const isLoading = ref(true);
-const selectedUF = ref('Todos');
-const apiFilters = ref(null);
+const loading = ref(true);
+const dashboardData = ref(null);
 
-const filters = reactive({
-    viscosidade: 'Todos',
-    api: 'Todos',
-    acea: 'Todos',
-    jaso: 'Todos',
-    basico: 'Todos',
-    tipoVeiculo: ['LEVE'],
-    // NOVOS CAMPOS ADICIONADOS PARA O SIMULADOR
-    trocaLeve: 1,
-    trocaPesada: 3.8,
-    trocaMoto: 3
+const state = reactive({
+  empresa: 'TOTALENERGIES',
+  ano: '2025',
+  mesDe: 'Jan',
+  mesAte: 'Dez',
+  segmento: 'REVENDEDOR'
 });
 
-const simuladorShare = reactive({
-  suaVendaAtualLitros: 0,
-  mesesCorridos: 0,
-  shareDesejado: 0
-});
-
-const overviewData = ref({ potencialConsumoLitrosAno: 0, frotaEfetiva: 0 });
-const simuladorTrocasData = ref([]);
-const tableData = ref([]);
-
-const stateNames = {
-  'AC': 'Acre', 'AL': 'Alagoas', 'AM': 'Amazonas', 'AP': 'Amapá', 'BA': 'Bahia', 'CE': 'Ceará', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo', 'GO': 'Goiás', 'MA': 'Maranhão', 'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais', 'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco', 'PI': 'Piauí', 'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte', 'RS': 'Rio Grande do Sul', 'RO': 'Rondônia', 'RR': 'Roraima', 'SC': 'Santa Catarina', 'SP': 'São Paulo', 'SE': 'Sergipe', 'TO': 'Tocantins'
+// Configuração de cores (Fidelidade visual)
+const marcasConfig = {
+  'TOTALENERGIES': { cor: '#f58220', logo: 'totalenergies' },
+  'YPF': { cor: '#00529b', logo: 'ypf' },
+  'VIBRA': { cor: '#004415', logo: 'vibra' },
+  'PETRONAS': { cor: '#00A79D', logo: 'petronas' },
+  'CASTROL': { cor: '#E10600', logo: 'castrol' },
+  'VALVOLINE': { cor: '#2FA4E7', logo: 'valvoline' },
+  'RAIZEN LUBRIFICANTES': { cor: '#9B1BB3', logo: 'raizen' },
+  'MOOVE': { cor: '#00A3E0', logo: 'moove' },
+  'LWART': { cor: '#000000', logo: 'lwart' },
+  'ICONIC': { cor: '#F56600', logo: 'iconic' },
+  'CHEVRON': { cor: '#005da4', logo: 'chevron' },
+  'IPIRANGA': { cor: '#ffcb05', logo: 'ipiranga' }
 };
 
-const geojsonData = ref(null);
-
-const getBounds = (geometry) => {
-    let coords = [];
-    if (geometry.type === 'Polygon') {
-        coords = geometry.coordinates[0];
-    } else if (geometry.type === 'MultiPolygon') {
-        geometry.coordinates.forEach(poly => {
-            poly[0].forEach(c => coords.push(c));
-        });
-    }
-    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-    coords.forEach(([lng, lat]) => {
-        if (lng < minLng) minLng = lng;
-        if (lat < minLat) minLat = lat;
-        if (lng > maxLng) maxLng = lng;
-        if (lat > maxLat) maxLat = lat;
-    });
-    return [[minLng, minLat], [maxLng, maxLat]];
-};
-
-// --- COMPUTED PARA FORMATAÇÃO E CÁLCULO ---
-
-const suaVendaFormatada = computed({
-  get() {
-    if (!simuladorShare.suaVendaAtualLitros) return "";
-    return new Intl.NumberFormat('pt-BR').format(simuladorShare.suaVendaAtualLitros);
-  },
-  set(newValue) {
-    const numericValue = String(newValue).replace(/\D/g, "");
-    simuladorShare.suaVendaAtualLitros = numericValue ? parseInt(numericValue) : 0;
+async function fetchDashboard() {
+  loading.value = true;
+  try {
+    const params = new URLSearchParams(state).toString();
+    const response = await fetch(`${API_BASE}/dashboard?${params}`);
+    const json = await response.json();
+    if (json.status === 'ok') dashboardData.value = json.data;
+  } catch (error) {
+    console.error("Erro:", error);
+  } finally {
+    loading.value = false;
   }
+}
+
+// Lógica de Escalonamento para Múltiplas Linhas
+const chartMetrics = computed(() => {
+  if (!dashboardData.value?.graficos?.vendasPorMes) return null;
+  const series = dashboardData.value.graficos.vendasPorMes.series;
+  const meses = dashboardData.value.graficos.vendasPorMes.meses;
+  
+  // Volume total para as barras de fundo
+  const marketVolumes = meses.map((_, i) => 
+    series.reduce((sum, s) => sum + s.valores[i], 0)
+  );
+
+  const maxVal = Math.max(...marketVolumes) * 1.2;
+
+  // Mapeia todas as séries (linhas)
+  const allLines = series.map(s => ({
+    empresa: s.empresa,
+    cor: marcasConfig[s.empresa]?.cor || '#ccc',
+    destaque: s.empresa === state.empresa,
+    points: s.valores.map(v => (v / maxVal) * 220)
+  }));
+
+  return {
+    bars: marketVolumes.map(v => (v / maxVal) * 220),
+    allLines,
+    labels: marketVolumes.map(v => `R$ ${Math.round(v/1000)}k`)
+  };
 });
 
-const vendaAnualizadaReal = computed(() => {
-    if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
-    return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
-});
+onMounted(fetchDashboard);
+watch(state, fetchDashboard);
 
-const marketShareReal = computed(() => {
-  if (!overviewData.value?.potencialConsumoLitrosAno || vendaAnualizadaReal.value <= 0) return '0.00';
-  const ms = (vendaAnualizadaReal.value / overviewData.value.potencialConsumoLitrosAno) * 100;
-  return ms.toFixed(2);
-});
-
-const shareEfetivoParaCalculo = computed(() => {
-    const manual = parseFloat(simuladorShare.shareDesejado) || 0;
-    if (manual > 0) return manual;
-    return parseFloat(marketShareReal.value) || 0;
-});
-
-const vendaObjetivoSimulada = computed(() => {
-    if (parseFloat(simuladorShare.shareDesejado) > 0) {
-        const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
-        return (simuladorShare.shareDesejado / 100) * potencial;
-    }
-    return vendaAnualizadaReal.value;
-});
-
-// --- FUNÇÕES ---
-const focarVendaReal = () => { simuladorShare.shareDesejado = 0; };
-const digitarShareDesejado = () => { simuladorShare.suaVendaAtualLitros = 0; simuladorShare.mesesCorridos = 0; };
-
-const aplicarSimulacaoNaTabela = () => {
-    if (!tableData.value.length) return;
-    const shareAlvo = shareEfetivoParaCalculo.value;
-    tableData.value.forEach(row => {
-        const vendaSimulada = (row.potencialLitros * shareAlvo) / 100;
-        row.suaVendaEstimada = Math.round(vendaSimulada);
-        row.gapLitros = Math.max(0, row.potencialLitros - row.suaVendaEstimada);
-        row.share = shareAlvo.toFixed(2);
-    });
-};
-
-const updateRowCalculations = (row) => {
-    const venda = parseFloat(row.suaVendaEstimada) || 0;
-    row.gapLitros = Math.max(0, row.potencialLitros - venda);
-    row.share = row.potencialLitros > 0 ? ((venda / row.potencialLitros) * 100).toFixed(2) : '0.00';
-};
-
-const toggleVehicleType = (typeId) => {
-    const index = filters.tipoVeiculo.indexOf(typeId);
-    if (index > -1) {
-        if (filters.tipoVeiculo.length > 1) filters.tipoVeiculo.splice(index, 1);
-    } else {
-        filters.tipoVeiculo.push(typeId);
-    }
-};
-
-const getTrocaData = (tipoBusca) => {
-    if (!simuladorTrocasData.value || !Array.isArray(simuladorTrocasData.value)) {
-        return { veiculos: 0, litrosAno: 0, trocasPorAno: 0 };
-    }
-    const found = simuladorTrocasData.value.find(s => 
-        s.tipoVeiculo.toUpperCase().includes(tipoBusca.toUpperCase())
-    );
-    // Retorna o valor da API, mas os inputs agora controlam o filtro global
-    return found || { veiculos: 0, litrosAno: 0, trocasPorAno: 0 };
-};
-
-const fetchDashboardData = async () => {
-    isLoading.value = true;
-    const ufParam = selectedUF.value === 'Todos' ? '' : selectedUF.value;
-    const params = {
-        ...filters,
-        estado: ufParam,
-        tipoVeiculo: filters.tipoVeiculo.join(','),
-        suaVendaAtualLitros: simuladorShare.suaVendaAtualLitros,
-        mesesCorridos: simuladorShare.mesesCorridos,
-        shareDesejado: simuladorShare.shareDesejado
-    };
-    try {
-        const [resOverview, resSimulador, resSpecs] = await Promise.all([
-            api.get('/overview', { params }),
-            api.get('/simulador', { params }),
-            api.get('/especificacoes', { params })
-        ]);
-        if (resOverview.data.data) overviewData.value = resOverview.data.data;
-        if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
-        if (resSpecs.data.data) {
-            tableData.value = resSpecs.data.data.itens || [];
-            aplicarSimulacaoNaTabela();
-        }
-    } catch (e) { console.error(e); } finally { 
-        isLoading.value = false;
-        if (map.value) map.value.resize();
-    }
-};
-
-const mapContainer = ref(null);
-const map = ref(null);
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'SUA_CHAVE_AQUI';
-
-const initMap = () => {
-  mapboxgl.accessToken = MAPBOX_TOKEN;
-  map.value = new mapboxgl.Map({
-    container: mapContainer.value,
-    style: 'mapbox://styles/mapbox/light-v11',
-    center: [-52, -15], zoom: 2.8, attributionControl: false
-  });
-  map.value.on('load', async () => {
-    const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
-    const response = await fetch(url);
-    geojsonData.value = await response.json();
-    map.value.addSource('states', { type: 'geojson', data: geojsonData.value, generateId: true });
-    map.value.addLayer({ id: 'states-fill', type: 'fill', source: 'states', paint: { 'fill-color': '#e97332', 'fill-opacity': ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1] }});
-    map.value.addLayer({ id: 'states-borders', type: 'line', source: 'states', paint: { 'line-color': '#e97332', 'line-width': 1 }});
-    map.value.on('click', 'states-fill', (e) => {
-        const sigla = e.features[0].properties.sigla;
-        selectedUF.value = (selectedUF.value === sigla) ? 'Todos' : sigla;
-    });
-  });
-};
-
-const updateMapHighlight = () => {
-    if(!map.value || !map.value.isStyleLoaded()) return;
-    map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
-};
-
-// WATCHERS ATUALIZADOS PARA MONITORAR AS TROCAS
-watch([shareEfetivoParaCalculo, () => overviewData.value.potencialConsumoLitrosAno], () => { aplicarSimulacaoNaTabela(); });
-watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
-watch(filters, () => { fetchDashboardData(); }, { deep: true });
-
-onMounted(async () => {
-    initMap();
-    const res = await api.get('/filtros').catch(() => null);
-    if (res?.data?.data) apiFilters.value = res.data.data;
-    await fetchDashboardData();
-});
-
-const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) : '0';
+const formatM3 = (v) => v.toLocaleString('pt-BR') + ' m³';
 </script>
 
 <template>
-  <div class="dashboard-wrapper">
-    
-    <div class="top-filter-bar shadow-sm px-4 py-2 bg-white d-flex align-items-center gap-3">
-      <div v-if="apiFilters" class="d-flex gap-3">
-        <div v-for="f in [{l:'VISCOSIDADE', k:'viscosidade'}, {l:'API', k:'api'}, {l:'ACEA', k:'acea'}, {l:'JASO', k:'jaso'}, {l:'BÁSICO', k:'basico'}]" :key="f.k" class="filter-item">
-            <label>{{ f.l }}:</label>
-            <select v-model="filters[f.k]" class="form-select form-select-sm">
-                <option value="Todos">Todos</option>
-                <option v-for="opt in apiFilters[f.k]" :key="opt" :value="opt">{{ opt }}</option>
-            </select>
+  <div class="pbi-layout" v-if="dashboardData">
+    <!-- FILTROS AJUSTADOS PARA HORIZONTAL -->
+    <header class="pbi-filters">
+      <div class="filter-left">
+        <div class="pbi-select">
+          <select v-model="state.empresa">
+            <option v-for="e in dashboardData.filtros.empresas" :key="e" :value="e">{{ e }}</option>
+          </select>
         </div>
+        <div class="pbi-tabs">
+          <button v-for="s in dashboardData.filtros.segmentos" :key="s.id" 
+                  :class="{ active: state.segmento === s.id }" @click="state.segmento = s.id">
+            {{ s.label.toUpperCase() }}
+          </button>
+        </div>
+        <div class="pbi-date">📅 {{ state.mesDe }} - {{ state.mesAte }} / {{ state.ano }}</div>
       </div>
-      <button @click="filters.tipoVeiculo=['LEVE']; selectedUF='Todos'; Object.keys(filters).forEach(k => !k.startsWith('troca') && k !== 'tipoVeiculo' ? filters[k]='Todos' : null)" class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
-    </div>
+      <button class="btn-clear" @click="state.ano = '2025'">Limpar Filtros</button>
+    </header>
 
-    <div class="main-content d-flex p-3 gap-3">
-      
-      <div class="sidebar d-flex flex-column gap-3">
-        <div class="card border-0 shadow-sm p-3 rounded-4 bg-white">
-            <h6 class="fw-bold mb-3 uppercase"><Filter :size="16" class="inline-block mr-1"/> Filtros</h6>
-            <div class="mb-3">
-                <label class="small fw-bold text-muted d-block mb-1">ESTADO</label>
-                <select v-model="selectedUF" class="form-select form-select-sm">
-                    <option value="Todos">Brasil Todo</option>
-                    <option v-for="uf in apiFilters?.estados" :key="uf" :value="uf">{{ stateNames[uf] || uf }}</option>
-                </select>
-            </div>
-            <div>
-              <label class="small fw-bold text-muted d-block mb-1">TIPO DE VEÍCULO</label>
-              <div class="btn-group w-100">
-                  <button @click="toggleVehicleType('LEVE')" class="btn btn-vehicle-type" :class="{active: filters.tipoVeiculo.includes('LEVE')}">
-                      <Car :size="18" /><span class="btn-label">Leve</span>
-                  </button>
-                  <button @click="toggleVehicleType('MOTO')" class="btn btn-vehicle-type" :class="{active: filters.tipoVeiculo.includes('MOTO')}">
-                      <Bike :size="18" /><span class="btn-label">Moto</span>
-                  </button>
-                  <button @click="toggleVehicleType('PESADA')" class="btn btn-vehicle-type" :class="{active: filters.tipoVeiculo.includes('PESADA')}">
-                      <Truck :size="18" /><span class="btn-label">Pesada</span>
-                  </button>
-              </div>
-            </div>
-        </div>
-
-        <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden" style="height: 250px;">
-            <div ref="mapContainer" class="w-100 h-100"></div>
-        </div>
-
-        <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
-            <h6 class="fw-bold mb-2 uppercase" style="font-size: 11px;"><Calculator :size="16"/> Simulador de Share</h6>
-            <div class="row g-2 mb-3 mt-2">
-                <div class="col-8">
-                    <label class="fw-bold small">SUA VENDA (Lts)</label>
-                    <div class="pbi-input-custom">
-                        <span class="pbi-input-label">Lts</span>
-                        <input type="text" v-model="suaVendaFormatada" @focus="focarVendaReal" @input="focarVendaReal" class="pbi-input-field">
-                    </div>
-                </div>
-                <div class="col-4">
-                    <label class="fw-bold small">MESES</label>
-                    <input type="number" v-model="simuladorShare.mesesCorridos" @focus="focarVendaReal" @input="focarVendaReal" class="form-control form-control-sm fw-bold">
-                </div>
-            </div>
-            
-            <div class="small fw-bold text-muted mb-2 text-center">
-               Venda Anualizada Real: {{ fmtNum(vendaAnualizadaReal) }} Lts
-            </div>
-
-            <div class="d-flex align-items-center justify-content-between mb-3 bg-white p-2 rounded-3 border">
-                <span class="fw-bold small">MARKET SHARE REAL:</span>
-                <span class="fw-black text-orange fs-5">{{ marketShareReal }}%</span>
-            </div>
-            <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
-            <div class="bg-white border rounded p-1 d-flex align-items-center">
-                <input type="number" v-model="simuladorShare.shareDesejado" @focus="digitarShareDesejado" @input="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
-                <span class="fw-bold fs-5 pe-2">%</span>
-            </div>
-        </div>
-      </div>
-
-      <div class="content-grid flex-grow-1 d-flex flex-column gap-3">
-        <div class="row g-3">
-          <div class="col-lg-8">
-            <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100">
-                <div class="px-2 mb-3">
-                    <h6 class="fw-bold m-0 uppercase text-muted" style="font-size: 12px;">Simulador de Trocas Anual por Tipo de Veículo</h6>
-                </div>
-                <div class="row g-0 align-items-center">
-                    <!-- LEVE -->
-                    <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('LEVE')}">
-                        <div class="d-flex align-items-center gap-3 mb-4">
-                            <Car class="text-orange" :size="48" />
-                            <div class="lh-1">
-                                <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('LEVE').veiculos) }}</div>
-                                <small class="text-muted fw-bold" style="font-size: 11px;">Veículos</small>
-                            </div>
-                        </div>
-                        <div class="mb-4 pt-3 border-top">
-                            <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('LEVE').litrosAno) }}</div>
-                            <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
-                        </div>
-                        <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaLeve">
-                        </div>
-                    </div>
-                    <!-- PESADA -->
-                    <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('PESADA')}">
-                        <div class="d-flex align-items-center gap-3 mb-4">
-                            <Truck class="text-orange" :size="48" />
-                            <div class="lh-1">
-                                <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('PESADA').veiculos) }}</div>
-                                <small class="text-muted fw-bold" style="font-size: 11px;">Veículos</small>
-                            </div>
-                        </div>
-                        <div class="mb-4 pt-3 border-top">
-                            <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('PESADA').litrosAno) }}</div>
-                            <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
-                        </div>
-                        <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaPesada">
-                        </div>
-                    </div>
-                    <!-- MOTO -->
-                    <div class="col-4 px-4" :class="{'opacity-25': !filters.tipoVeiculo.includes('MOTO')}">
-                        <div class="d-flex align-items-center gap-3 mb-4">
-                            <Bike class="text-orange" :size="48" />
-                            <div class="lh-1">
-                                <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('MOTO').veiculos) }}</div>
-                                <small class="text-muted fw-bold" style="font-size: 11px;">Veículos</small>
-                            </div>
-                        </div>
-                        <div class="mb-4 pt-3 border-top">
-                            <div class="fw-bold fs-4">{{ fmtNum(getTrocaData('MOTO').litrosAno) }}</div>
-                            <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
-                        </div>
-                        <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaMoto">
-                        </div>
-                    </div>
-                </div>
-            </div>
-          </div>
-
-          <div class="col-lg-4">
-            <div class="card border-0 shadow-sm rounded-4 overview-card text-white d-flex flex-column overflow-hidden h-100" style="background-color: #1a2332;">
-              <div class="p-3 flex-grow-1">
-                <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
-                <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
-                <div class="mt-3">
-                  <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
-                  <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
-                </div>
-              </div>
-              <div class="p-3" style="background-color: #e97332;">
-                <h3 class="fw-bold m-0">{{ shareEfetivoParaCalculo.toFixed(2) }}%</h3>
-                <p class="mb-3 small">Share Projetado (Alvo)</p>
-                <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
-                <p class="mb-0 small">Frota Eletiva</p>
-              </div>
+    <div class="pbi-content" :class="{ 'loading-opacity': loading }">
+      <!-- KPIs -->
+      <section class="top-section">
+        <div class="kpi-grid">
+          <div v-for="(k, i) in dashboardData.cards" :key="i" class="card kpi-card" 
+               :style="{ background: k.id.includes('empresa') ? '#fff6ed' : '#fff' }">
+            <div class="kpi-label">{{ k.titulo }}</div>
+            <div class="kpi-val">{{ formatM3(k.valor) }}</div>
+            <div class="kpi-footer">
+              <span class="sub">{{ formatM3(k.comparativo) }}</span>
+              <span class="pill" :class="{ neg: k.variacaoPercentual < 0 }">{{ k.variacaoPercentual }}% YoY</span>
             </div>
           </div>
         </div>
 
-        <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden flex-grow-1">
-            <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold m-0 uppercase">DETALHAMENTO POR ESPECIFICAÇÃO</h6>
-                <span class="badge rounded-pill bg-light text-dark border px-3">{{ tableData.length }} Registros</span>
+        <div class="card chart-annual">
+          <div class="card-title">Venda Anual</div>
+          <div class="bars-container">
+            <div v-for="b in dashboardData.graficos.vendaAnual.items" :key="b.ano" class="bar-col">
+              <span class="bar-txt">{{ Math.round(b.valor/1000) }}k</span>
+              <div class="bar" :class="{ orange: b.ano == state.ano }" 
+                   :style="{ height: (b.valor / Math.max(...dashboardData.graficos.vendaAnual.items.map(x=>x.valor)) * 100) + '%' }"></div>
+              <span class="bar-label">{{ b.ano }}</span>
             </div>
-            <div class="table-responsive" style="max-height: 450px;">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="sticky-top bg-white border-bottom shadow-sm">
-                        <tr>
-                            <th class="ps-4 py-3 text-muted fw-bold small">ESPECIFICAÇÃO</th>
-                            <th class="text-end py-3 text-muted fw-bold small">POTENCIAL (L)</th>
-                            <th class="text-end py-3 text-orange fw-bold small" style="width: 180px;">SUA VENDA (EST.)</th>
-                            <th class="text-end py-3 text-muted fw-bold small">GAP (LITROS)</th>
-                            <th class="text-end pe-4 py-3 text-muted fw-bold small">SHARE</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(row, idx) in tableData" :key="idx" class="border-bottom">
-                            <td class="ps-4 fw-bold text-dark small">{{ row.especificacao }}</td>
-                            <td class="text-end fw-bold">{{ fmtNum(row.potencialLitros) }}</td>
-                            <td class="text-end">
-                                <div class="d-flex justify-content-end">
-                                    <input type="text" 
-                                       :value="fmtNum(row.suaVendaEstimada)" 
-                                       @input="e => { 
-                                           const val = e.target.value.replace(/\D/g, ''); 
-                                           row.suaVendaEstimada = val ? parseInt(val) : 0; 
-                                           updateRowCalculations(row); 
-                                       }" 
-                                       class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" 
-                                       style="max-width: 110px;">
-                                </div>
-                            </td>
-                            <td class="text-end text-muted">{{ fmtNum(row.gapLitros) }}</td>
-                            <td class="text-end pe-4"><span class="badge bg-light text-dark border">{{ row.share }}%</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+          </div>
         </div>
-      </div>
+
+        <div class="card chart-segment">
+          <div class="card-title">Vendas por Segmento</div>
+          <div class="segment-container">
+            <div v-for="seg in dashboardData.graficos.segmento.items" :key="seg.id" class="seg-col">
+              <span class="bar-txt">{{ Math.round(seg.valor/1000) }}k</span>
+              <div class="seg-bar" :style="{ background: seg.cor, height: '70%' }"></div>
+              <span class="bar-label bold">{{ seg.label }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- GRÁFICO PRINCIPAL COM MULTI-LINHAS -->
+      <section class="card main-viz">
+        <div class="viz-header">
+          <div class="viz-info">
+            <h3>Vendas de Lubrificantes por Mês</h3>
+            <p>Barras = Volume Total Mercado • Linhas = Evolução por Marca</p>
+          </div>
+          <div class="viz-actions">
+            <!-- BOTÕES DE ANO ESTILIZADOS -->
+            <div class="tabs-anos">
+              <button v-for="ano in dashboardData.filtros.anos" :key="ano" 
+                      :class="{ active: state.ano === ano }" @click="state.ano = ano">{{ ano }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- LEGENDA -->
+        <div class="viz-legend">
+          <div v-for="(cfg, nome) in marcasConfig" :key="nome" class="leg-item" @click="state.empresa = nome">
+            <span class="dot" :style="{ background: cfg.cor }"></span> 
+            <span :class="{ 'bold-active': state.empresa === nome }">{{ nome }}</span>
+          </div>
+        </div>
+
+        <div class="viz-body">
+          <div class="svg-area">
+            <svg viewBox="0 0 1000 320" preserveAspectRatio="none">
+              <!-- Grid -->
+              <line v-for="n in 5" :key="n" x1="50" :y1="280 - (n*50)" x2="950" :y2="280 - (n*50)" stroke="#f0f0f0" />
+              
+              <!-- Barras -->
+              <g v-for="(h, i) in chartMetrics?.bars" :key="'b'+i">
+                <rect :x="i*75 + 60" :y="280 - h" width="40" :height="h" fill="#e9ecef" rx="2" />
+                <text :x="i*75 + 80" :y="280 - h - 10" text-anchor="middle" class="bar-val">{{ chartMetrics.labels[i] }}</text>
+              </g>
+
+              <!-- MÚLTIPLAS LINHAS -->
+              <g v-for="line in chartMetrics?.allLines" :key="line.empresa">
+                <polyline 
+                  :points="line.points.map((h, i) => `${i*75 + 80},${280 - h}`).join(' ')" 
+                  fill="none" 
+                  :stroke="line.cor" 
+                  :stroke-width="line.destaque ? 4 : 1.5"
+                  :stroke-opacity="line.destaque ? 1 : 0.4"
+                  stroke-linejoin="round"
+                />
+                <g v-if="line.destaque">
+                  <circle v-for="(h, i) in line.points" :key="'c'+i"
+                          :cx="i*75 + 80" :cy="280 - h" r="4" :fill="line.cor" />
+                </g>
+              </g>
+
+              <text v-for="(m, i) in dashboardData.graficos.vendasPorMes.meses" :key="m" 
+                    :x="i*75 + 80" y="310" text-anchor="middle" class="svg-txt">{{ m }}</text>
+            </svg>
+          </div>
+
+          <!-- SIDEBAR % SHARE COM LOGOS AJUSTADAS -->
+          <div class="sidebar">
+            <div class="side-title">% Share Mercado</div>
+            <div v-for="m in dashboardData.marcas" :key="m.nome" class="side-item" @click="state.empresa = m.nome">
+              <img :src="`/logos/lubrificantes/${marcasConfig[m.nome]?.logo || 'generic'}.png`" class="brand-logo-img" />
+              <span class="name">{{ m.nome }}</span>
+              <span class="badge" :class="{ orange: m.selecionada }">24,8%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="ia-legend">
+        <div class="ia-ico">✦</div>
+        <div class="ia-content">
+          <div class="ia-title">Dashboard Legenda por IA <span class="ia-tag">LubAssist IA</span></div>
+          <p>Visão de <b>{{ state.ano }}</b>: Comparativo multi-marcas. A linha em destaque representa <b>{{ state.empresa }}</b>.</p>
+        </div>
+      </footer>
     </div>
-    <div v-if="isLoading" class="loader-global"><div class="spinner-border text-orange"></div></div>
   </div>
 </template>
 
 <style scoped>
-/* Mantendo seus estilos originais */
-.dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
-.top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
-.filter-item { display: flex; align-items: center; gap: 8px; }
-.filter-item label { font-size: 9px; font-weight: 800; color: #334155; white-space: nowrap; }
-.sidebar { width: 300px; flex-shrink: 0; }
-.content-grid { overflow-y: auto; padding-bottom: 60px; }
-.btn-vehicle-type { border: 1px solid #dee2e6; background: #fff; color: #6c757d; flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 0; transition: 0.2s; }
-.btn-vehicle-type.active { background-color: #e97332 !important; border-color: #e97332 !important; color: white !important; }
-.btn-label { font-size: 9px; font-weight: 700; margin-top: 4px; }
-.simulator-card-total { background-color: #fff5e6; border: 1px solid #f1c40f !important; }
-.pbi-input-custom { display: flex; align-items: center; background: white; border: 1px solid #dee2e6; border-radius: 50px; overflow: hidden; height: 32px; }
-.pbi-input-label { background: #f8fafc; color: #1a2332; font-weight: 800; font-size: 10px; padding: 0 10px; border-right: 1px solid #dee2e6; }
-.pbi-input-field { border: none; flex: 1; padding: 0 8px; font-size: 12px; font-weight: 700; outline: none; background: transparent; }
-.loader-global { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.7); display:flex; align-items:center; justify-content:center; z-index: 9999; }
-.uppercase { text-transform: uppercase; letter-spacing: 0.5px; }
-.text-orange { color: #e97332 !important; }
-.border-orange-subtle { border-color: #fbd6c0 !important; }
-.btn-red-total { background-color: #ff0000; color: white; border: none; font-size: 11px; }
-input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-/* Ajuste extra para os inputs de troca parecerem com o primeiro script */
-input[type=number].form-control-sm { height: 28px; font-size: 12px; }
+.pbi-layout { background: #f3f3f3; min-height: 100vh; padding: 15px; font-family: 'Segoe UI', sans-serif; }
+.pbi-content { display: flex; flex-direction: column; gap: 15px; min-width: 1200px; transition: opacity 0.3s; }
+.loading-opacity { opacity: 0.6; }
+
+/* AJUSTE FILTROS LADO A LADO */
+.pbi-filters { display: flex; justify-content: space-between; background: white; padding: 10px 20px; border-radius: 8px; align-items: center; margin-bottom: 10px; }
+.filter-left { display: flex; flex-direction: row; align-items: center; gap: 20px; } /* Garante o alinhamento horizontal */
+
+.pbi-tabs { display: flex; background: #eee; padding: 3px; border-radius: 6px; }
+.pbi-tabs button { border: none; background: transparent; padding: 5px 12px; font-size: 11px; cursor: pointer; font-weight: bold; color: #666; }
+.pbi-tabs button.active { background: #f58220; color: white; border-radius: 4px; }
+.pbi-date { white-space: nowrap; font-size: 13px; color: #444; }
+
+/* BOTÕES DE ANO - ESTILO CLEAN */
+.tabs-anos { display: flex; gap: 6px; }
+.tabs-anos button { border: 1px solid #e0e0e0; background: #fff; padding: 5px 14px; font-size: 12px; cursor: pointer; border-radius: 4px; color: #333; transition: 0.2s; }
+.tabs-anos button.active { background: #f58220; color: white; border-color: #f58220; font-weight: bold; }
+
+/* BOTÃO LIMPAR FILTROS */
+.btn-clear { background: white; border: 2px solid #333; color: #333; padding: 8px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }
+
+/* LOGOS SIDEBAR */
+.brand-logo-img { width: 30px; height: 30px; object-fit: contain; border-radius: 6px; } /* Aumentado ~40% e sem bordas */
+
+.top-section { display: grid; grid-template-columns: 3fr 1.5fr 1fr; gap: 15px; height: 260px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.card { background: white; border-radius: 10px; border: 1px solid #e0e0e0; padding: 12px; display: flex; flex-direction: column; }
+.kpi-val { font-size: 20px; font-weight: 800; }
+.pill { background: #e6f7ed; color: #008a3e; font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px; }
+.pill.neg { background: #fee2e2; color: #dc2626; }
+
+.bars-container, .segment-container { display: flex; align-items: flex-end; justify-content: space-between; flex: 1; }
+.bar-col, .seg-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 1; }
+.bar { width: 50%; background: #cfd4d9; border-radius: 2px; }
+.bar.orange { background: #f58220; }
+.seg-bar { width: 40px; border-radius: 3px; }
+.bar-txt { font-size: 9px; font-weight: bold; margin-bottom: 4px; }
+.bar-label { font-size: 10px; color: #999; margin-top: 5px; }
+
+.main-viz { min-height: 480px; }
+.viz-header { display: flex; justify-content: space-between; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; cursor: pointer; color: #666; }
+.dot { width: 10px; height: 3px; border-radius: 2px; }
+.bold-active { color: #f58220; font-weight: bold; }
+
+.viz-body { display: flex; gap: 20px; flex: 1; }
+.svg-area { flex: 1; }
+.sidebar { width: 220px; border-left: 1px solid #eee; padding-left: 15px; }
+.side-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; }
+.badge { font-size: 10px; background: #eee; padding: 2px 6px; border-radius: 4px; width: 45px; text-align: center; }
+.badge.orange { background: #f58220; color: white; }
+
+.ia-legend { background: #1a1d21; color: white; padding: 15px; border-radius: 10px; display: flex; gap: 15px; align-items: center; }
+.ia-ico { color: #f58220; font-size: 20px; }
+.ia-tag { background: #3d3429; color: #f58220; font-size: 9px; padding: 2px 8px; border-radius: 4px; }
+.svg-txt { font-size: 11px; fill: #aaa; }
+.bar-val { font-size: 10px; fill: #666; font-weight: bold; }
 </style>
