@@ -198,8 +198,41 @@ const initMap = () => {
 };
 
 const updateMapHighlight = () => {
-    if(!map.value || !map.value.isStyleLoaded()) return;
-    map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
+    if (!map.value || !map.value.isStyleLoaded()) return;
+
+    // 1. Atualiza a opacidade (o que já fazia)
+    map.value.setPaintProperty('states-fill', 'fill-opacity', [
+        'case', 
+        ['==', ['get', 'sigla'], selectedUF.value], 0.5, 
+        0.1
+    ]);
+
+    // 2. Lógica para mover a câmera
+    if (selectedUF.value === 'Todos') {
+        // Se for "Todos", volta para a visão geral do Brasil
+        map.value.flyTo({
+            center: [-52, -15],
+            zoom: 2.8,
+            essential: true
+        });
+    } else if (geojsonData.value) {
+        // Encontra a feature (o estado) correspondente no GeoJSON
+        const stateFeature = geojsonData.value.features.find(
+            f => f.properties.sigla === selectedUF.value
+        );
+
+        if (stateFeature) {
+            // Usa a sua função getBounds para calcular o enquadramento
+            const bounds = getBounds(stateFeature.geometry);
+            
+            // Move o mapa para as bordas do estado com um preenchimento (padding)
+            map.value.fitBounds(bounds, {
+                padding: 30,
+                duration: 1000, // milissegundos da animação
+                essential: true
+            });
+        }
+    }
 };
 
 // WATCHERS ATUALIZADOS PARA MONITORAR AS TROCAS
