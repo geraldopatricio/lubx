@@ -9,6 +9,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // --- CONFIGURAÇÃO API ---
+// const api = axios.create({ baseURL: 'http://localhost:3000/bi/oportunidades', timeout: 60000 });
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/oportunidades', timeout: 60000 });
 
 // --- ESTADOS REATIVOS ---
@@ -22,11 +23,7 @@ const filters = reactive({
     acea: 'Todos',
     jaso: 'Todos',
     basico: 'Todos',
-    tipoVeiculo: ['LEVE'],
-    // NOVOS CAMPOS ADICIONADOS PARA O SIMULADOR
-    trocaLeve: 1,
-    trocaPesada: 3.8,
-    trocaMoto: 3
+    tipoVeiculo: ['LEVE']
 });
 
 const simuladorShare = reactive({
@@ -64,19 +61,23 @@ const getBounds = (geometry) => {
     return [[minLng, minLat], [maxLng, maxLat]];
 };
 
-// --- COMPUTED PARA FORMATAÇÃO E CÁLCULO ---
-
+/**
+ * 1. TRATAMENTO DO INPUT FORMATADO
+ */
 const suaVendaFormatada = computed({
   get() {
     if (!simuladorShare.suaVendaAtualLitros) return "";
     return new Intl.NumberFormat('pt-BR').format(simuladorShare.suaVendaAtualLitros);
   },
   set(newValue) {
-    const numericValue = String(newValue).replace(/\D/g, "");
+    const numericValue = newValue.replace(/\D/g, "");
     simuladorShare.suaVendaAtualLitros = numericValue ? parseInt(numericValue) : 0;
   }
 });
 
+/**
+ * 2. VENDA ANUALIZADA REAL
+ */
 const vendaAnualizadaReal = computed(() => {
     if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
     return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
@@ -88,27 +89,19 @@ const marketShareReal = computed(() => {
   return ms.toFixed(2);
 });
 
-const shareEfetivoParaCalculo = computed(() => {
-    const manual = parseFloat(simuladorShare.shareDesejado) || 0;
-    if (manual > 0) return manual;
-    return parseFloat(marketShareReal.value) || 0;
-});
-
+/**
+ * 3. VENDA OBJETIVO
+ */
 const vendaObjetivoSimulada = computed(() => {
-    if (parseFloat(simuladorShare.shareDesejado) > 0) {
-        const potencial = overviewData.value?.potencialConsumoLitrosAno || 0;
-        return (simuladorShare.shareDesejado / 100) * potencial;
-    }
-    return vendaAnualizadaReal.value;
+    const venda = simuladorShare.suaVendaAtualLitros || 0;
+    const meses = simuladorShare.mesesCorridos || 0;
+    return (venda / meses) * 12;
 });
 
-// --- FUNÇÕES ---
-const focarVendaReal = () => { simuladorShare.shareDesejado = 0; };
-const digitarShareDesejado = () => { simuladorShare.suaVendaAtualLitros = 0; simuladorShare.mesesCorridos = 0; };
-
+// Mantida a função, mas removida a execução automática por watchers
 const aplicarSimulacaoNaTabela = () => {
     if (!tableData.value.length) return;
-    const shareAlvo = shareEfetivoParaCalculo.value;
+    const shareAlvo = parseFloat(simuladorShare.shareDesejado) || 0;
     tableData.value.forEach(row => {
         const vendaSimulada = (row.potencialLitros * shareAlvo) / 100;
         row.suaVendaEstimada = Math.round(vendaSimulada);
@@ -123,6 +116,7 @@ const updateRowCalculations = (row) => {
     row.share = row.potencialLitros > 0 ? ((venda / row.potencialLitros) * 100).toFixed(2) : '0.00';
 };
 
+// --- FUNÇÕES DE LÓGICA ---
 const toggleVehicleType = (typeId) => {
     const index = filters.tipoVeiculo.indexOf(typeId);
     if (index > -1) {
@@ -139,8 +133,7 @@ const getTrocaData = (tipoBusca) => {
     const found = simuladorTrocasData.value.find(s => 
         s.tipoVeiculo.toUpperCase().includes(tipoBusca.toUpperCase())
     );
-    // Retorna o valor da API, mas os inputs agora controlam o filtro global
-    return found || { veiculos: 0, litrosAno: 0, trocasPorAno: 0 };
+    return found || { veiculos: 0, litrosAno: 0, trocasPorAno: tipoBusca === 'LEVE' ? 1 : tipoBusca === 'PESADA' ? 3.8 : 3 };
 };
 
 const fetchDashboardData = async () => {
@@ -163,8 +156,13 @@ const fetchDashboardData = async () => {
         if (resOverview.data.data) overviewData.value = resOverview.data.data;
         if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
         if (resSpecs.data.data) {
-            tableData.value = resSpecs.data.data.itens || [];
-            aplicarSimulacaoNaTabela();
+            // AJUSTE: Mapeia os dados garantindo que a venda estimada comece em 0
+            tableData.value = (resSpecs.data.data.itens || []).map(item => ({
+                ...item,
+                suaVendaEstimada: 0,
+                gapLitros: item.potencialLitros,
+                share: '0.00'
+            }));
         }
     } catch (e) { console.error(e); } finally { 
         isLoading.value = false;
@@ -198,47 +196,23 @@ const initMap = () => {
 };
 
 const updateMapHighlight = () => {
-    if (!map.value || !map.value.isStyleLoaded()) return;
-
-    // 1. Atualiza a opacidade (o que já fazia)
-    map.value.setPaintProperty('states-fill', 'fill-opacity', [
-        'case', 
-        ['==', ['get', 'sigla'], selectedUF.value], 0.5, 
-        0.1
-    ]);
-
-    // 2. Lógica para mover a câmera
-    if (selectedUF.value === 'Todos') {
-        // Se for "Todos", volta para a visão geral do Brasil
-        map.value.flyTo({
-            center: [-52, -15],
-            zoom: 2.8,
-            essential: true
-        });
-    } else if (geojsonData.value) {
-        // Encontra a feature (o estado) correspondente no GeoJSON
-        const stateFeature = geojsonData.value.features.find(
-            f => f.properties.sigla === selectedUF.value
-        );
-
-        if (stateFeature) {
-            // Usa a sua função getBounds para calcular o enquadramento
-            const bounds = getBounds(stateFeature.geometry);
-            
-            // Move o mapa para as bordas do estado com um preenchimento (padding)
-            map.value.fitBounds(bounds, {
-                padding: 30,
-                duration: 1000, // milissegundos da animação
-                essential: true
-            });
+    if(!map.value || !map.value.isStyleLoaded()) return;
+    map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
+    if (selectedUF.value !== 'Todos' && geojsonData.value) {
+        const feature = geojsonData.value.features.find(f => f.properties.sigla === selectedUF.value);
+        if (feature) {
+            const bounds = getBounds(feature.geometry);
+            map.value.fitBounds(bounds, { padding: 40, duration: 1500, essential: true });
         }
+    } else {
+        map.value.flyTo({ center: [-52, -15], zoom: 2.8, duration: 1500 });
     }
 };
 
-// WATCHERS ATUALIZADOS PARA MONITORAR AS TROCAS
-watch([shareEfetivoParaCalculo, () => overviewData.value.potencialConsumoLitrosAno], () => { aplicarSimulacaoNaTabela(); });
+// AJUSTE: Removido o Watcher do shareDesejado para não alterar a tabela automaticamente
+
 watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
-watch(filters, () => { fetchDashboardData(); }, { deep: true });
+watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => { fetchDashboardData(); });
 
 onMounted(async () => {
     initMap();
@@ -263,7 +237,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             </select>
         </div>
       </div>
-      <button @click="filters.tipoVeiculo=['LEVE']; selectedUF='Todos'; Object.keys(filters).forEach(k => !k.startsWith('troca') && k !== 'tipoVeiculo' ? filters[k]='Todos' : null)" class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
+      <button @click="filters.tipoVeiculo=['LEVE']; selectedUF='Todos'; Object.keys(filters).forEach(k => k !== 'tipoVeiculo' ? filters[k]='Todos' : null)" class="btn btn-red-total btn-sm ms-auto fw-bold px-4">Limpar todos os filtros</button>
     </div>
 
     <div class="main-content d-flex p-3 gap-3">
@@ -298,6 +272,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             <div ref="mapContainer" class="w-100 h-100"></div>
         </div>
 
+        <!-- SIMULADOR DE SHARE (REAL) -->
         <div class="card border-0 shadow-sm p-3 rounded-4 simulator-card-total"> 
             <h6 class="fw-bold mb-2 uppercase" style="font-size: 11px;"><Calculator :size="16"/> Simulador de Share</h6>
             <div class="row g-2 mb-3 mt-2">
@@ -305,12 +280,13 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <input type="text" v-model="suaVendaFormatada" @focus="focarVendaReal" @input="focarVendaReal" class="pbi-input-field">
+                        <!-- AJUSTADO: type para text e v-model para a versão formatada -->
+                        <input type="text" v-model="suaVendaFormatada" class="pbi-input-field">
                     </div>
                 </div>
                 <div class="col-4">
                     <label class="fw-bold small">MESES</label>
-                    <input type="number" v-model="simuladorShare.mesesCorridos" @focus="focarVendaReal" @input="focarVendaReal" class="form-control form-control-sm fw-bold">
+                    <input type="number" v-model="simuladorShare.mesesCorridos" class="form-control form-control-sm fw-bold">
                 </div>
             </div>
             
@@ -324,7 +300,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
             </div>
             <label class="fw-bold small mb-1">SHARE DESEJADO (%)</label>
             <div class="bg-white border rounded p-1 d-flex align-items-center">
-                <input type="number" v-model="simuladorShare.shareDesejado" @focus="digitarShareDesejado" @input="digitarShareDesejado" class="form-control border-0 text-center fw-bold fs-4">
+                <input type="number" v-model="simuladorShare.shareDesejado" class="form-control border-0 text-center fw-bold fs-4">
                 <span class="fw-bold fs-5 pe-2">%</span>
             </div>
         </div>
@@ -338,7 +314,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <h6 class="fw-bold m-0 uppercase text-muted" style="font-size: 12px;">Simulador de Trocas Anual por Tipo de Veículo</h6>
                 </div>
                 <div class="row g-0 align-items-center">
-                    <!-- LEVE -->
                     <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('LEVE')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Car class="text-orange" :size="48" />
@@ -352,11 +327,13 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
                         </div>
                         <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaLeve">
+                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas por Ano</small>
+                            <div class="d-flex align-items-center justify-content-center gap-2">
+                                <span class="fw-bold">{{ getTrocaData('LEVE').trocasPorAno }}</span>
+                                <Info :size="14" class="text-muted" />
+                            </div>
                         </div>
                     </div>
-                    <!-- PESADA -->
                     <div class="col-4 px-4 border-end" :class="{'opacity-25': !filters.tipoVeiculo.includes('PESADA')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Truck class="text-orange" :size="48" />
@@ -370,11 +347,13 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
                         </div>
                         <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaPesada">
+                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas por Ano</small>
+                            <div class="d-flex align-items-center justify-content-center gap-2">
+                                <span class="fw-bold">{{ getTrocaData('PESADA').trocasPorAno }}</span>
+                                <Info :size="14" class="text-muted" />
+                            </div>
                         </div>
                     </div>
-                    <!-- MOTO -->
                     <div class="col-4 px-4" :class="{'opacity-25': !filters.tipoVeiculo.includes('MOTO')}">
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <Bike class="text-orange" :size="48" />
@@ -388,8 +367,11 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <small class="text-muted fw-bold" style="font-size: 11px;">Litros / ano</small>
                         </div>
                         <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
-                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
-                            <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters.trocaMoto">
+                            <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas por Ano</small>
+                            <div class="d-flex align-items-center justify-content-center gap-2">
+                                <span class="fw-bold">{{ getTrocaData('MOTO').trocasPorAno }}</span>
+                                <Info :size="14" class="text-muted" />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -402,12 +384,13 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
+                  <!-- EXIBE O RESULTADO DO NOVO CÁLCULO -->
                   <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
                   <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
               </div>
               <div class="p-3" style="background-color: #e97332;">
-                <h3 class="fw-bold m-0">{{ shareEfetivoParaCalculo.toFixed(2) }}%</h3>
+                <h3 class="fw-bold m-0">{{ simuladorShare.shareDesejado }}%</h3>
                 <p class="mb-3 small">Share Projetado (Alvo)</p>
                 <h2 class="fw-bold m-0">{{ fmtNum(overviewData.frotaEfetiva) }}</h2>
                 <p class="mb-0 small">Frota Eletiva</p>
@@ -438,15 +421,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                             <td class="text-end fw-bold">{{ fmtNum(row.potencialLitros) }}</td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end">
-                                    <input type="text" 
-                                       :value="fmtNum(row.suaVendaEstimada)" 
-                                       @input="e => { 
-                                           const val = e.target.value.replace(/\D/g, ''); 
-                                           row.suaVendaEstimada = val ? parseInt(val) : 0; 
-                                           updateRowCalculations(row); 
-                                       }" 
-                                       class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" 
-                                       style="max-width: 110px;">
+                                    <input type="number" v-model.number="row.suaVendaEstimada" @input="updateRowCalculations(row)" class="form-control form-control-sm text-end fw-bold text-orange border-orange-subtle bg-white" style="max-width: 110px;">
                                 </div>
                             </td>
                             <td class="text-end text-muted">{{ fmtNum(row.gapLitros) }}</td>
@@ -463,7 +438,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 </template>
 
 <style scoped>
-/* Mantendo seus estilos originais */
+/* Estilos mantidos originais */
 .dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
 .top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
 .filter-item { display: flex; align-items: center; gap: 8px; }
@@ -483,6 +458,4 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 .border-orange-subtle { border-color: #fbd6c0 !important; }
 .btn-red-total { background-color: #ff0000; color: white; border: none; font-size: 11px; }
 input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-/* Ajuste extra para os inputs de troca parecerem com o primeiro script */
-input[type=number].form-control-sm { height: 28px; font-size: 12px; }
 </style>
