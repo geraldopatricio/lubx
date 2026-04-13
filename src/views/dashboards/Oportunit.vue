@@ -40,10 +40,8 @@ const stateNames = {
   'AC': 'Acre', 'AL': 'Alagoas', 'AM': 'Amazonas', 'AP': 'Amapá', 'BA': 'Bahia', 'CE': 'Ceará', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo', 'GO': 'Goiás', 'MA': 'Maranhão', 'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais', 'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco', 'PI': 'Piauí', 'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte', 'RS': 'Rio Grande do Sul', 'RO': 'Rondônia', 'RR': 'Roraima', 'SC': 'Santa Catarina', 'SP': 'São Paulo', 'SE': 'Sergipe', 'TO': 'Tocantins'
 };
 
-// Variável para armazenar os dados geográficos dos estados
 const geojsonData = ref(null);
 
-// Função auxiliar para calcular os limites (bounds) de uma geometria (Polygon ou MultiPolygon)
 const getBounds = (geometry) => {
     let coords = [];
     if (geometry.type === 'Polygon') {
@@ -53,7 +51,6 @@ const getBounds = (geometry) => {
             poly[0].forEach(c => coords.push(c));
         });
     }
-    
     let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
     coords.forEach(([lng, lat]) => {
         if (lng < minLng) minLng = lng;
@@ -64,21 +61,28 @@ const getBounds = (geometry) => {
     return [[minLng, minLat], [maxLng, maxLat]];
 };
 
-// --- CÁLCULOS (REAL vs SIMULADO) ---
+/**
+ * 1. TRATAMENTO DO INPUT FORMATADO
+ */
+const suaVendaFormatada = computed({
+  get() {
+    if (!simuladorShare.suaVendaAtualLitros) return "";
+    return new Intl.NumberFormat('pt-BR').format(simuladorShare.suaVendaAtualLitros);
+  },
+  set(newValue) {
+    const numericValue = newValue.replace(/\D/g, "");
+    simuladorShare.suaVendaAtualLitros = numericValue ? parseInt(numericValue) : 0;
+  }
+});
 
 /**
- * 1. VENDA ANUALIZADA REAL (O que você perguntou)
- * Baseado puramente nos campos do card amarelo: (Lts / Meses) * 12
+ * 2. VENDA ANUALIZADA REAL
  */
 const vendaAnualizadaReal = computed(() => {
     if (!simuladorShare.suaVendaAtualLitros || !simuladorShare.mesesCorridos) return 0;
     return (simuladorShare.suaVendaAtualLitros / simuladorShare.mesesCorridos) * 12;
 });
 
-/**
- * 2. MARKET SHARE REAL
- * Comparação da Venda Anualizada Real vs Potencial Total
- */
 const marketShareReal = computed(() => {
   if (!overviewData.value?.potencialConsumoLitrosAno || vendaAnualizadaReal.value <= 0) return '0.00';
   const ms = (vendaAnualizadaReal.value / overviewData.value.potencialConsumoLitrosAno) * 100;
@@ -86,23 +90,18 @@ const marketShareReal = computed(() => {
 });
 
 /**
- * 3. VENDA OBJETIVO (SIMULAÇÃO)
- * O quanto você venderia se atingisse o "Share Desejado"
- * Baseado em: Potencial Total * (Share Desejado / 100)
+ * 3. VENDA OBJETIVO
  */
 const vendaObjetivoSimulada = computed(() => {
-    const potencialTotal = overviewData.value?.potencialConsumoLitrosAno || 0;
-    const shareAlvo = simuladorShare.shareDesejado || 0;
-    return (potencialTotal * shareAlvo) / 100;
+    const venda = simuladorShare.suaVendaAtualLitros || 0;
+    const meses = simuladorShare.mesesCorridos || 0;
+    return (venda / meses) * 12;
 });
 
-/**
- * 4. Aplica a simulação proporcional na tabela
- */
+// Mantida a função, mas removida a execução automática por watchers
 const aplicarSimulacaoNaTabela = () => {
     if (!tableData.value.length) return;
     const shareAlvo = parseFloat(simuladorShare.shareDesejado) || 0;
-    
     tableData.value.forEach(row => {
         const vendaSimulada = (row.potencialLitros * shareAlvo) / 100;
         row.suaVendaEstimada = Math.round(vendaSimulada);
@@ -118,7 +117,6 @@ const updateRowCalculations = (row) => {
 };
 
 // --- FUNÇÕES DE LÓGICA ---
-
 const toggleVehicleType = (typeId) => {
     const index = filters.tipoVeiculo.indexOf(typeId);
     if (index > -1) {
@@ -149,19 +147,22 @@ const fetchDashboardData = async () => {
         mesesCorridos: simuladorShare.mesesCorridos,
         shareDesejado: simuladorShare.shareDesejado
     };
-
     try {
         const [resOverview, resSimulador, resSpecs] = await Promise.all([
             api.get('/overview', { params }),
             api.get('/simulador', { params }),
             api.get('/especificacoes', { params })
         ]);
-
         if (resOverview.data.data) overviewData.value = resOverview.data.data;
         if (resSimulador.data.data) simuladorTrocasData.value = resSimulador.data.data;
         if (resSpecs.data.data) {
-            tableData.value = resSpecs.data.data.itens || [];
-            aplicarSimulacaoNaTabela();
+            // AJUSTE: Mapeia os dados garantindo que a venda estimada comece em 0
+            tableData.value = (resSpecs.data.data.itens || []).map(item => ({
+                ...item,
+                suaVendaEstimada: 0,
+                gapLitros: item.potencialLitros,
+                share: '0.00'
+            }));
         }
     } catch (e) { console.error(e); } finally { 
         isLoading.value = false;
@@ -169,7 +170,6 @@ const fetchDashboardData = async () => {
     }
 };
 
-// --- MAPA ---
 const mapContainer = ref(null);
 const map = ref(null);
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'SUA_CHAVE_AQUI';
@@ -181,18 +181,13 @@ const initMap = () => {
     style: 'mapbox://styles/mapbox/light-v11',
     center: [-52, -15], zoom: 2.8, attributionControl: false
   });
-
   map.value.on('load', async () => {
     const url = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson';
-    
-    // Buscamos o dado para o mapa e para nossa variável local
     const response = await fetch(url);
     geojsonData.value = await response.json();
-
     map.value.addSource('states', { type: 'geojson', data: geojsonData.value, generateId: true });
     map.value.addLayer({ id: 'states-fill', type: 'fill', source: 'states', paint: { 'fill-color': '#e97332', 'fill-opacity': ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1] }});
     map.value.addLayer({ id: 'states-borders', type: 'line', source: 'states', paint: { 'line-color': '#e97332', 'line-width': 1 }});
-    
     map.value.on('click', 'states-fill', (e) => {
         const sigla = e.features[0].properties.sigla;
         selectedUF.value = (selectedUF.value === sigla) ? 'Todos' : sigla;
@@ -202,34 +197,20 @@ const initMap = () => {
 
 const updateMapHighlight = () => {
     if(!map.value || !map.value.isStyleLoaded()) return;
-    
-    // 1. Atualiza a cor (destaque)
     map.value.setPaintProperty('states-fill', 'fill-opacity', ['case', ['==', ['get', 'sigla'], selectedUF.value], 0.5, 0.1]);
-
-    // 2. Move a câmera
     if (selectedUF.value !== 'Todos' && geojsonData.value) {
-        // Encontra o estado selecionado no nosso GeoJSON
         const feature = geojsonData.value.features.find(f => f.properties.sigla === selectedUF.value);
         if (feature) {
             const bounds = getBounds(feature.geometry);
-            map.value.fitBounds(bounds, {
-                padding: 40,      // Espaçamento nas bordas do card
-                duration: 1500,   // Velocidade da animação em milisegundos
-                essential: true
-            });
+            map.value.fitBounds(bounds, { padding: 40, duration: 1500, essential: true });
         }
     } else {
-        // Se selecionar "Brasil Todo", volta para a visão geral do país
-        map.value.flyTo({
-            center: [-52, -15],
-            zoom: 2.8,
-            duration: 1500
-        });
+        map.value.flyTo({ center: [-52, -15], zoom: 2.8, duration: 1500 });
     }
 };
 
-// --- WATCHERS ---
-watch(() => simuladorShare.shareDesejado, () => { aplicarSimulacaoNaTabela(); });
+// AJUSTE: Removido o Watcher do shareDesejado para não alterar a tabela automaticamente
+
 watch([selectedUF, () => filters.tipoVeiculo], () => { updateMapHighlight(); fetchDashboardData(); }, { deep: true });
 watch([() => filters.viscosidade, () => filters.api, () => filters.acea, () => filters.jaso, () => filters.basico], () => { fetchDashboardData(); });
 
@@ -299,7 +280,8 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                     <label class="fw-bold small">SUA VENDA (Lts)</label>
                     <div class="pbi-input-custom">
                         <span class="pbi-input-label">Lts</span>
-                        <input type="number" v-model="simuladorShare.suaVendaAtualLitros" class="pbi-input-field">
+                        <!-- AJUSTADO: type para text e v-model para a versão formatada -->
+                        <input type="text" v-model="suaVendaFormatada" class="pbi-input-field">
                     </div>
                 </div>
                 <div class="col-4">
@@ -308,7 +290,6 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 </div>
             </div>
             
-            <!-- EXIBIÇÃO DA VENDA ANUALIZADA REAL PARA NÃO PERDER A INFORMAÇÃO -->
             <div class="small fw-bold text-muted mb-2 text-center">
                Venda Anualizada Real: {{ fmtNum(vendaAnualizadaReal) }} Lts
             </div>
@@ -403,7 +384,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
                 <p class="mb-1 fw-bold opacity-75 small">Potencial Consumo (L / Ano)</p>
                 <h1 class="fw-bold m-0" style="font-size: 2.2rem;">{{ fmtNum(overviewData.potencialConsumoLitrosAno) }}</h1>
                 <div class="mt-3">
-                  <!-- PROJETADA BASEADA NO ALVO (SIMULADA) -->
+                  <!-- EXIBE O RESULTADO DO NOVO CÁLCULO -->
                   <h3 class="fw-bold m-0">{{ fmtNum(vendaObjetivoSimulada) }}</h3>
                   <p class="mb-0 small opacity-75">Sua Venda Projetada (Alvo)</p>
                 </div>
@@ -457,6 +438,7 @@ const fmtNum = (v) => v ? new Intl.NumberFormat('pt-BR').format(Math.floor(v)) :
 </template>
 
 <style scoped>
+/* Estilos mantidos originais */
 .dashboard-wrapper { background-color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
 .top-filter-bar { height: 60px; z-index: 100; border-bottom: 1px solid #e2e8f0; }
 .filter-item { display: flex; align-items: center; gap: 8px; }
