@@ -154,18 +154,20 @@ const clearFilters = () => { Object.keys(filters).forEach(k => { if (!k.startsWi
 // --- AJUSTE: NORMAS TOP 10 COM REGRA DE 20% ---
 const normasChartData = computed(() => {
     if (!detalhada.value?.graficos?.norma) return { labels: [], datasets: [] };
+
+    // Filtramos para REMOVER o "SEM NORMA" e depois pegamos o Top 10 das normas reais
     const raw = detalhada.value.graficos.norma
+        .filter(i => i.label !== 'SEM NORMA' && i.label !== 'Não informado') 
         .sort((a, b) => b.litros - a.litros)
         .slice(0, 10);
 
-    const sumOthers = raw.filter(i => i.label !== 'SEM NORMA').reduce((a, b) => a + b.litros, 0);
-    const visualData = raw.map(i => {
-        if (i.label === 'SEM NORMA' && sumOthers > 0) return sumOthers / 4; 
-        return i.litros;
-    });
     return {
         labels: raw.map(i => i.label),
-        datasets: [{ data: visualData, realData: raw.map(i => i.litros), backgroundColor: orangePalette }]
+        datasets: [{ 
+            data: raw.map(i => i.litros), 
+            realData: raw.map(i => i.litros), 
+            backgroundColor: orangePalette 
+        }]
     };
 });
 
@@ -173,27 +175,22 @@ const getDoughnutOptions = (key) => ({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-        padding: {
-            top: 5,
-            bottom: 5, // <-- Aumentamos muito o fundo para empurrar o gráfico para cima
-            left: 10,
-            right: 10
-        }
+        // Aumentamos o padding global para os textos escalonados não cortarem nas bordas do card
+        padding: 18 
     },
-    // Ajuste 1: Gráfico menor (70%) para dar o respiro do segundo print
-    radius: '70%', 
-    cutout: '55%', 
+    // Reduzimos o raio do gráfico para 65% para sobrar espaço para as etiquetas "subirem"
+    radius: '55%', 
+    cutout: '45%', 
     onClick: (e, el) => handleChartClick(e, el, key),
     plugins: {
         legend: {
             display: true,
             position: 'bottom',
-            align: 'center',
+            align: 'end', // <--- Move a legenda para o canto inferior direito
             labels: {
                 usePointStyle: true,
                 pointStyle: 'circle',
-                boxWidth: 8,
-                // Ajuste 2: Espaço grande entre o gráfico e as bolinhas da legenda
+                boxWidth: 18,
                 padding: 5, 
                 font: {
                     family: "'Inter', sans-serif",
@@ -206,7 +203,20 @@ const getDoughnutOptions = (key) => ({
             display: true,
             anchor: 'end',
             align: 'end',
-            offset: 10,
+            // FUNÇÃO DE ESCALONAMENTO (STAGGERING)
+            offset: (context) => {
+                const dataset = context.dataset;
+                const realData = dataset.realData || dataset.data;
+                const value = realData[context.dataIndex];
+                const total = realData.reduce((a, b) => a + b, 0);
+                
+                // Se a fatia for pequena (menos de 10%), alterna o offset em 3 níveis
+                // Isso faz com que os nomes fiquem um acima do outro
+                if (total > 0 && (value / total) < 0.20) {
+                    return (context.dataIndex % 5) * 7 + 0; 
+                }
+                return 10;
+            },
             color: '#444',
             textAlign: 'center',
             font: {
@@ -219,13 +229,15 @@ const getDoughnutOptions = (key) => ({
                 const realData = ctx.dataset.realData || ctx.dataset.data;
                 const total = realData.reduce((a, b) => a + b, 0);
                 const val = realData[ctx.dataIndex];
-                const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
                 
-                // Ajuste 3: Lógica para o rótulo de baixo (SEMISSINTÉTICO) 
-                // não exibir a porcentagem e não bater na legenda
-                if (label === 'SEMISSINTÉTICO') {
-                    return label; // Retorna apenas o nome, sem o \n e a porcentagem
-                }
+                if (total === 0) return null;
+                const pct = ((val / total) * 100).toFixed(1) + '%';
+                
+                // Se for muito pequeno (menos de 1%), nem exibe para não poluir
+                if ((val / total) < 0.01) return null;
+
+                // Para o gráfico de básico, ajuste específico solicitado anteriormente
+                if (label === 'SEMISSINTÉTICO') return label;
 
                 return `${label}\n${pct}`;
             }
@@ -349,6 +361,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                 <div class="d-flex align-items-center gap-3 mb-4"><div class="icon-header"><MapIcon class="text-white" :size="24"/></div><h2 class="fw-bold m-0">{{ selectedStateName }}</h2></div>
                 <div v-if="panorama">
                     <div class="row mb-4"><div class="col-6"><h3 class="fw-bold m-0">{{ formatNum(panorama.resumo.litrosAnoTotal) }}</h3><small class="text-muted">Litros / ano total</small></div><div class="col-6 border-start ps-4"><h3 class="fw-bold m-0">{{ formatNum(panorama.resumo.frotaGeral) }}</h3><small class="text-muted">Frota Geral</small></div></div>
+                    <p style="font-size: 13px;"><span>&#9432;</span> A litragem total apresentada está alinhada com a estimativa média nacional de trocas de óleo por segmento.</p>
                     <hr class="mb-4"><div class="flex-grow-1"><label class="fw-bold mb-4 d-block">Segmentação e Perfil:</label><div v-for="s in panorama.perfilSegmentacao" :key="s.id" class="mb-4"><div class="d-flex align-items-start gap-3"><component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange mt-1" :size="32"/><div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>{{ formatNum(s.litrosAno) }} L</strong><small class="text-muted">{{ formatNum(s.frota) }} veíc.</small></div><div class="progress" style="height: 6px;"><div class="progress-bar bg-orange" :style="{width: s.percentualLitros + '%'}"></div></div><small class="text-muted" style="font-size: 10px;">{{ s.label }} ({{ s.percentualLitros }}%)</small></div></div></div><div class="pt-3 border-top d-flex align-items-center gap-3"><Clock class="text-orange" :size="32"/><div><strong class="fs-5">{{ panorama.resumo.idadeMediaFrota }} anos</strong><small class="text-muted d-block" style="font-size:10px">Idade Média da Frota</small></div></div></div>
                 </div>
                 <button @click="viewMode = 'detailed'" class="btn btn-detail w-100 py-3 mt-4 fw-bold shadow-sm">Avançar para Análise Detalhada</button>
@@ -393,35 +406,81 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                 </div>
 
                 <div class="row g-2 mb-3">
-                    <div class="col-lg-5"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white"><div class="row h-100 align-items-center"><div v-for="s in detalhada.comparativosSegmento" :key="s.id" class="col-4 border-end last-no-border px-3"><div class="d-flex align-items-center gap-2 mb-3"><component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange" :size="42" /><div class="lh-sm"><strong>{{ formatNum(s.veiculos) }}</strong><small class="text-muted d-block" style="font-size:10px">Veículos</small></div></div><div class="mb-3 border-top pt-2"><strong>{{ formatNum(s.litrosAno) }}</strong><small class="text-muted d-block" style="font-size:10px">Litros / ano</small></div><div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm"><small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small><input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters[s.id.includes('leve') ? 'trocaLeve' : (s.id.includes('pesada') ? 'trocaPesada' : 'trocaMoto')]"></div></div></div></div></div>
-                    <div class="col-lg-4"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal"><small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small><div style="height: 180px;">
-                    <Bar :data="chartEstados" :options="{ 
-                        responsive: true, 
-                        maintainAspectRatio: false, 
-                        layout: { padding: { top: 20 } }, // Espaço para o número não sumir no topo
-                        plugins: { 
-                            legend: { display: false },
-                            datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' } } 
-                        } 
-                    }" />
-                    </div></div></div>
-                    <div class="col-lg-3"><div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal"><small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small><div style="height: 180px;">
-                    <Bar :data="chartCidadesTop5" :options="{ 
-                        indexAxis: 'y', 
-                        responsive: true, 
-                        maintainAspectRatio: false, 
-                        layout: { padding: { right: 30 } }, // Espaço para o número à direita
-                        plugins: { 
-                            legend: { display: false },
-                            datalabels: { anchor: 'end', align: 'right', font: { weight: 'bold' } } 
-                        } 
-                    }" />
-                    </div></div></div>
+                    <!-- CARD SEGMENTOS -->
+                    <div class="col-lg-5">
+                        <div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white">
+                            <div class="row h-100 align-items-center">
+                                <div v-for="s in detalhada.comparativosSegmento" :key="s.id" class="col-4 border-end last-no-border px-3">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <component :is="s.id.includes('leve')?Car:s.id.includes('pesada')?Truck:Bike" class="text-orange" :size="42" />
+                                        <div class="lh-sm"><strong>{{ formatNum(s.veiculos) }}</strong><small class="text-muted d-block" style="font-size:10px">Veículos</small></div>
+                                    </div>
+                                    <div class="mb-3 border-top pt-2"><strong>{{ formatNum(s.litrosAno) }}</strong><small class="text-muted d-block" style="font-size:10px">Litros / ano</small></div>
+                                    <div class="p-2 rounded-3 border border-light-subtle text-center bg-white shadow-sm">
+                                        <small class="text-muted d-block mb-1 fw-bold" style="font-size:10px">Trocas / Ano</small>
+                                        <input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold bg-light border-0" v-model.number="filters[s.id.includes('leve') ? 'trocaLeve' : (s.id.includes('pesada') ? 'trocaPesada' : 'trocaMoto')]">
+                                    </div>
+                                </div>
+                                    <p style="font-size: 13px;"><span>&#9432;</span> A quantidade de trocas apresentada, representa uma estimativa baseada na média nacional.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD ESTADOS (AJUSTADO PARA 250) -->
+                    <div class="col-lg-4">
+                        <div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openStatesModal">
+                            <small class="fw-bold text-muted uppercase">ESTADOS (Top 10)</small>
+                            <div style="height: 210px;">
+                                <Bar :data="chartEstados" :options="{ 
+                                    responsive: true, 
+                                    maintainAspectRatio: false, 
+                                    layout: { padding: { top: 20 } },
+                                    scales: { y: { beginAtZero: true, max: 250 } },
+                                    plugins: { 
+                                        legend: { display: false },
+                                        datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold' }, formatter: (v) => v.toFixed(2) } 
+                                    } 
+                                }" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD CIDADES -->
+                    <div class="col-lg-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 rounded-4 bg-white card-white-kpi" @click="openCitiesModal">
+                            <small class="fw-bold text-muted uppercase">CIDADES (Top 5)</small>
+                            <div style="height: 210px;">
+                                <Bar :data="chartCidadesTop5" :options="{ 
+                                    indexAxis: 'y', 
+                                    responsive: true, 
+                                    maintainAspectRatio: false, 
+                                    layout: { padding: { right: 40 } }, // Aumentei o respiro lateral
+                                    scales: { 
+                                        x: { 
+                                            beginAtZero: true, 
+                                            max: 40 // Define o limite máximo em 40 para encurtar as barras
+                                        } 
+                                    },
+                                    plugins: { 
+                                        legend: { display: false },
+                                        datalabels: { 
+                                            anchor: 'end', 
+                                            align: 'right', 
+                                            offset: 5,
+                                            font: { weight: 'bold' },
+                                            formatter: (v) => v.toFixed(2)
+                                        } 
+                                    } 
+                                }" />
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="row g-2">
                     <div class="col-md-5"><div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100"><small class="fw-bold text-muted uppercase mb-3 d-block">VISCOSIDADE</small><div style="height: 220px;">
                     <div style="height: 220px;">
+                    <!-- VISCOSIDADE - Ajuste do eixo Y para 300 -->
                     <Bar 
                         :data="chartViscosidade" 
                         :options="{ 
@@ -429,31 +488,43 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                         maintainAspectRatio: false,
                         layout: {
                             padding: {
-                            top: 3 // Espaço extra para os valores não baterem no topo
+                                top: 5 // Aumentado significativamente para dar espaço à legenda e aos números
                             }
                         },
                         plugins: {
                             legend: {
-                            display: true,
-                            position: 'top',
-                            align: 'start', // Alinha a legenda à ESQUERDA
-                            labels: {
-                                boxWidth: 12,
-                                font: { size: 10 },
-                                padding: 0
-                            }
+                                display: true,
+                                position: 'top',
+                                align: 'start',
+                                labels: { 
+                                    boxWidth: 12, 
+                                    font: { size: 10 }, 
+                                    padding: 3 // Aumenta o espaço entre a legenda e as barras do gráfico
+                                }
                             },
-                            // Mantendo os valores acima das barras/linhas conforme solicitado antes
                             datalabels: {
-                            anchor: 'end',
-                            align: 'top',
-                            offset: 2,
-                            font: { weight: 'bold', size: 10 }
+                                anchor: 'end',
+                                align: 'top',
+                                offset: 0, // Aumenta um pouco a distância do número para o ponto/barra
+                                font: { weight: 'bold', size: 10 },
+                                formatter: (v, ctx) => {
+                                    // Se for a linha de %, adiciona o símbolo
+                                    if (ctx.dataset.type === 'line') return v + '%';
+                                    return v;
+                                }
                             }
                         },
                         scales: { 
-                            y: { beginAtZero: true }, 
-                            y1: { position: 'right', grid: { display: false }, min: 0, max: 110 } 
+                            y: { 
+                                beginAtZero: true, 
+                                max: 300 // Garante que as barras fiquem baixas
+                            }, 
+                            y1: { 
+                                position: 'right', 
+                                grid: { display: false }, 
+                                min: 0, 
+                                max: 180 // Aumentado de 110 para 140 para a linha de 100% não bater no teto
+                            } 
                         } 
                         }" 
                     />
@@ -550,7 +621,13 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
     :options="{ 
         responsive: true, 
         maintainAspectRatio: false, 
-        layout: { padding: { top: 30 } },
+        layout: { padding: { top: 30 } }, 
+        scales: { 
+            y: { 
+                beginAtZero: true, 
+                max: 250 // Ajuste aqui também para consistência
+            } 
+        },
         plugins: { 
             legend: { display: false },
             datalabels: { 
@@ -564,41 +641,60 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
     }" 
 />
                 <Pie 
-    v-else-if="modalData" 
-    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.frota), backgroundColor: orangePalette }] }" 
-    :options="{
-        responsive: true, 
-        maintainAspectRatio: false,
-        layout: {
-            padding: 40 // Espaço para os textos externos não cortarem
-        },
-        radius: '70%', // Diminui a pizza para caber os textos
-        plugins: { 
-            legend: { 
-                display: true, 
-                position: 'top',
-                labels: { usePointStyle: true, pointStyle: 'circle', font: { size: 10 } }
-            }, 
-            datalabels: { 
-                display: true,
-                anchor: 'end',
-                align: 'end',
-                offset: 15,
-                color: '#444', 
-                textAlign: 'center', 
-                font: { 
-                    family: 'Inter, sans-serif', // <-- Força a fonte moderna aqui
-                    weight: 'bold', 
-                    size: 10 
-                }, 
-                formatter: (v, ctx) => { 
-                    // Mostra Nome e Volume (formatado)
-                    return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); 
-                } 
-            } 
-        } 
-    }" 
-/>
+                    v-else-if="modalData" 
+                    :data="{ labels: modalData.map(i => i.label), datasets: [{ data: modalData.map(i => i.frota), backgroundColor: orangePalette }] }" 
+                    :options="{
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        layout: {
+                            // Aumentamos o padding inferior para a legenda não encostar no gráfico
+                            padding: {
+                                top: 40,
+                                bottom: 0,
+                                left: 10,
+                                right: 10
+                            }
+                        },
+                        radius: '60%', 
+                        plugins: { 
+                            legend: { 
+                                display: true, 
+                                position: 'bottom', // Move para a parte de baixo
+                                align: 'end',       // Alinha à direita
+                                labels: { 
+                                    usePointStyle: true, 
+                                    pointStyle: 'circle', 
+                                    font: { size: 10 },
+                                    padding: 15     // Espaço entre os itens da legenda
+                                }
+                            }, 
+                            datalabels: { 
+                                display: true,
+                                anchor: 'end',
+                                align: 'end',
+                                offset: (context) => {
+                                    const value = context.dataset.data[context.dataIndex];
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    // Se a fatia for pequena, escalona para não sobrepor
+                                    if ((value / total) < 0.15) {
+                                        return (context.dataIndex % 3) * 35 + 10; 
+                                    }
+                                    return 15;
+                                },
+                                color: '#444', 
+                                textAlign: 'center', 
+                                font: { 
+                                    family: 'Inter, sans-serif',
+                                    weight: 'bold', 
+                                    size: 10 
+                                }, 
+                                formatter: (v, ctx) => { 
+                                    return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); 
+                                } 
+                            } 
+                        } 
+                    }" 
+                />
             </div>
         </div>
     </div>
