@@ -101,6 +101,7 @@ const marcasConfig = {
   PETRONAS: { cor: '#00A79D', logo: 'petronas' },
   CASTROL: { cor: '#E10600', logo: 'castrol' },
   VALVOLINE: { cor: '#2FA4E7', logo: 'valvoline' },
+  'RAIZEN LUBRIFICANTES': { cor: '#9B1BB3', logo: 'raizen' },
   RAIZEN: { cor: '#9B1BB3', logo: 'raizen' },
   MOOVE: { cor: '#00A3E0', logo: 'moove' },
   LWART: { cor: '#000000', logo: 'lwart' },
