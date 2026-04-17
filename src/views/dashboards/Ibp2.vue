@@ -13,12 +13,12 @@ const dashboardData = ref(null);
 function calcularPeriodoUltimos13Meses() {
   const hoje = new Date();
 
-  // remove mês atual
-  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  // último dia do mês anterior
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
 
-  // volta 13 meses
+  // início 13 meses antes
   const inicio = new Date(fim);
-  inicio.setMonth(inicio.getMonth() - 13);
+  inicio.setMonth(inicio.getMonth() - 12);
 
   const formatar = (data) => {
     const y = data.getFullYear();
