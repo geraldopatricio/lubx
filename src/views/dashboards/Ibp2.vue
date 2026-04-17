@@ -9,11 +9,37 @@ const SHARE_TICKS = [1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 
 const loading = ref(true);
 const dashboardData = ref(null);
 
+
+function calcularPeriodoUltimos13Meses() {
+  const hoje = new Date();
+
+  // remove mês atual
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+  // volta 13 meses
+  const inicio = new Date(fim);
+  inicio.setMonth(inicio.getMonth() - 13);
+
+  const formatar = (data) => {
+    const y = data.getFullYear();
+    const m = String(data.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  };
+
+  return {
+    dataDe: formatar(inicio),
+    dataAte: formatar(fim),
+  };
+}
+
+
+const periodoInicial = calcularPeriodoUltimos13Meses();
+
 const state = reactive({
   empresaSelecionada: ALL_BRANDS_VALUE,
   segmentos: [DEFAULT_SEGMENT],
-  dataDe: '2025-01-01',
-  dataAte: '2026-03-01',
+  dataDe: periodoInicial.dataDe,
+  dataAte: periodoInicial.dataAte,
   hiddenEmpresas: [],
 });
 
@@ -39,6 +65,34 @@ function updateDateFromMonthInput(type, val) {
   if (type === 'de') state.dataDe = dateStr; 
   else state.dataAte = dateStr;
 }
+
+
+// --- LÓGICA DO NOVO CALENDÁRIO ---
+const showPickerDe = ref(false);
+const showPickerAte = ref(false);
+const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+// Estados para navegação de ano dentro do modal
+const viewYearDe = ref(new Date(state.dataDe).getFullYear());
+const viewYearAte = ref(new Date(state.dataAte).getFullYear());
+
+function selectMonth(type, year, monthIndex) {
+  const monthStr = String(monthIndex + 1).padStart(2, '0');
+  const val = `${year}-${monthStr}`;
+  updateDateFromMonthInput(type, val);
+  if (type === 'de') showPickerDe.value = false;
+  else showPickerAte.value = false;
+}
+
+// Fechar ao clicar fora
+onMounted(() => {
+  window.addEventListener('click', (e) => {
+    if (!e.target.closest('.custom-date-picker')) {
+      showPickerDe.value = false;
+      showPickerAte.value = false;
+    }
+  });
+});
 
 const marcasConfig = {
   TOTALENERGIES: { cor: '#8C6239', logo: 'totalenergies' },
@@ -274,21 +328,62 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
         <div class="filter-block">
           <label>Período</label>
           <div class="period-picker">
-            <div class="date-field">
-              <span>De</span>
-              <input 
-                type="month" 
-                :value="monthValueDe" 
-                @input="updateDateFromMonthInput('de', $event.target.value)" 
-              />
+            <!-- Campo DE -->
+            <div class="custom-date-picker">
+              <span class="date-label">De</span>
+              <div class="picker-input" @click.stop="showPickerDe = !showPickerDe; showPickerAte = false">
+                <i class="calendar-icon">📅</i>
+                <span>{{ formatDateDisplay(state.dataDe) }}</span>
+              </div>
+              
+              <div v-if="showPickerDe" class="month-selector-modal">
+                <div class="modal-header">
+                  <button @click.stop="viewYearDe--">«</button>
+                  <span class="year-display">{{ viewYearDe }}</span>
+                  <button @click.stop="viewYearDe++">»</button>
+                </div>
+                <div class="month-grid">
+                  <button 
+                    v-for="(m, idx) in months" 
+                    :key="m" 
+                    class="month-btn"
+                    :class="{ active: monthValueDe === `${viewYearDe}-${String(idx+1).padStart(2, '0')}` }"
+                    @click.stop="selectMonth('de', viewYearDe, idx)"
+                  >
+                    {{ m }}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="date-field">
-              <span>Até</span>
-              <input 
-                type="month" 
-                :value="monthValueAte" 
-                @input="updateDateFromMonthInput('ate', $event.target.value)" 
-              />
+
+            <div class="date-separator"></div>
+
+            <!-- Campo ATÉ -->
+            <div class="custom-date-picker">
+              <span class="date-label">Até</span>
+              <div class="picker-input" @click.stop="showPickerAte = !showPickerAte; showPickerDe = false">
+                <i class="calendar-icon">📅</i>
+                <span>{{ formatDateDisplay(state.dataAte) }}</span>
+              </div>
+
+              <div v-if="showPickerAte" class="month-selector-modal">
+                <div class="modal-header">
+                  <button @click.stop="viewYearAte--">«</button>
+                  <span class="year-display">{{ viewYearAte }}</span>
+                  <button @click.stop="viewYearAte++">»</button>
+                </div>
+                <div class="month-grid">
+                  <button 
+                    v-for="(m, idx) in months" 
+                    :key="m" 
+                    class="month-btn"
+                    :class="{ active: monthValueAte === `${viewYearAte}-${String(idx+1).padStart(2, '0')}` }"
+                    @click.stop="selectMonth('ate', viewYearAte, idx)"
+                  >
+                    {{ m }}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -418,14 +513,134 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .select-control { min-width: 200px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 12px; }
 .segment-picker { display: flex; gap: 8px; }
 .segment-option { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d1d5db; border-radius: 20px; padding: 4px 12px; font-size: 11px; background: #fafafa; cursor: pointer; }
+/* --- NOVO ESTILO CALENDÁRIO --- */
 .period-picker { 
   display: flex; 
-  gap: 12px; 
-  background: #f8fafc; 
-  padding: 6px 12px; 
-  border-radius: 8px; 
-  border: 1px solid #cbd5e1; 
+  align-items: center; 
+  gap: 10px;
+}
+
+.custom-date-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.date-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.picker-input {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 130px;
+  display: flex;
   align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1e293b;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.picker-input:hover {
+  border-color: #f58220;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.calendar-icon {
+  font-size: 14px;
+  opacity: 0.6;
+}
+
+.date-separator {
+  width: 12px;
+  height: 2px;
+  background: #cbd5e1;
+  margin-top: 18px;
+}
+
+/* Modal do Seletor */
+.month-selector-modal {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+  padding: 15px;
+  margin-top: 8px;
+  width: 240px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.modal-header button {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-header button:hover {
+  background: #f58220;
+  color: white;
+  border-color: #f58220;
+}
+
+.year-display {
+  font-weight: 800;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.month-btn {
+  padding: 10px 5px;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.month-btn:hover {
+  background: #f1f5f9;
+  color: #f58220;
+  border-color: #f58220;
+}
+
+.month-btn.active {
+  background: #f58220;
+  color: white;
+  font-weight: 700;
 }
 
 .date-field { 
@@ -505,8 +720,6 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .dot { width: 10px; height: 3px; border-radius: 2px; }
 .viz-body { display: flex; gap: 20px; flex: 1; }
 .svg-area { flex: 1; }
-
-
 
 .sidebar { 
   width: 220px; 
