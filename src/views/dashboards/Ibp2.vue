@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 const API_BASE = 'https://lubx-api.lubconsulta.com.br/bi/ipb';
 const DEFAULT_SEGMENT = 'REVENDEDOR';
 const ALL_BRANDS_VALUE = 'TODAS';
-const SHARE_TICKS = [1, 2, 3, 4, 5, 10, 15, 20, 25, 100];
+const SHARE_TICKS = [1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 150];
 
 const loading = ref(true);
 const dashboardData = ref(null);
@@ -12,9 +12,21 @@ const dashboardData = ref(null);
 const state = reactive({
   empresaSelecionada: ALL_BRANDS_VALUE,
   segmentos: [DEFAULT_SEGMENT],
-  dataDe: '',
-  dataAte: '',
+  dataDe: '2025-01-01',
+  dataAte: '2026-03-01',
   hiddenEmpresas: [],
+});
+
+// Estado do Tooltip
+const tooltip = reactive({
+  show: false,
+  x: 0,
+  y: 0,
+  empresa: '',
+  mes: '',
+  volume: 0,
+  share: 0,
+  cor: ''
 });
 
 const marcasConfig = {
@@ -31,7 +43,33 @@ const marcasConfig = {
   ICONIC: { cor: '#F56600', logo: 'iconic' },
 };
 
-// --- COMPUTEDS DE KPIs E FILTROS ---
+// --- COMPUTEDS DE KPIs (Grade 2x2) ---
+const kpiMercadoPeriodo = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.mercado);
+const kpiEmpresaPeriodo = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.empresa);
+const projecaoDados = computed(() => dashboardData.value?.cardsCalculados?.projecao);
+
+const kpiMercadoProjecao = computed(() => {
+  const p = projecaoDados.value?.mercado;
+  if (!p) return null;
+  return {
+    titulo: 'Análise Mercado - Projeção',
+    valor: p.valorProjetado,
+    comparativo: p.comparativoAnoAnteriorProjetado,
+    variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+  };
+});
+
+const kpiEmpresaProjecao = computed(() => {
+  const p = projecaoDados.value?.empresa;
+  if (!p) return null;
+  return {
+    titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+    valor: p.valorProjetado,
+    comparativo: p.comparativoAnoAnteriorProjetado,
+    variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+  };
+});
+
 const availableEmpresas = computed(() => {
   const list = dashboardData.value?.filtros?.empresas || [];
   return list.filter(e => e !== 'IPIRANGA' && e !== 'CHEVRON');
@@ -41,29 +79,47 @@ const selectedEmpresaLabel = computed(() => (
   state.empresaSelecionada === ALL_BRANDS_VALUE ? 'Todas as marcas' : state.empresaSelecionada
 ));
 
-const isAnoVigente = computed(() => dashboardData.value?.cardsCalculados?.projecao?.habilitada || false);
-const kpiMercado = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.mercado);
-const kpiEmpresa = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.empresa);
-const kpiProjecao = computed(() => dashboardData.value?.cardsCalculados?.projecao);
-
-// --- GRÁFICO ANUAL ---
-const annualChartData = computed(() => {
+// --- GRÁFICO ANUAL (Linha conectada ao topo da barra) ---
+const annualChartMetrics = computed(() => {
   const comp = dashboardData.value?.graficoAnualComparativo;
   if (!comp?.barrasMercadoTotal) return null;
+
+  const chartWidth = 600;
+  const chartHeight = 220;
+  const paddingBottom = 45;
+  const paddingTop = 30;
+  const usableHeight = chartHeight - paddingTop - paddingBottom;
+  const baseLineY = chartHeight - paddingBottom;
+  
   const maxVal = Math.max(...comp.barrasMercadoTotal.map(i => i.valor), 1);
-  return comp.barrasMercadoTotal.map(item => {
+  const gap = chartWidth / comp.barrasMercadoTotal.length;
+  const barWidth = 35;
+
+  const data = comp.barrasMercadoTotal.map((item, idx) => {
     const valorMarca = comp.linhaMarcaSelecionada?.find(l => l.ano === item.ano)?.valor || 0;
+    const sharePercent = item.valor > 0 ? (valorMarca / item.valor) * 100 : 0;
+    
+    const x = (idx * gap) + (gap / 2);
+    const barTotalHeight = (item.valor / maxVal) * usableHeight;
+    const barMarcaHeight = (valorMarca / maxVal) * usableHeight;
+
     return {
       ano: item.ano,
       valorTotal: item.valor,
       valorMarca: valorMarca,
-      percentualMarca: (valorMarca / maxVal) * 100,
-      percentualTotal: (item.valor / maxVal) * 100
+      share: sharePercent,
+      x,
+      barTotalY: baseLineY - barTotalHeight,
+      barTotalHeight,
+      barMarcaY: baseLineY - barMarcaHeight,
+      barMarcaHeight
     };
   });
+
+  return { data, barWidth, chartWidth, chartHeight, baseLineY };
 });
 
-// --- GRÁFICO MENSAL (AJUSTE DE CENTRALIZAÇÃO APLICADO AQUI) ---
+// --- GRÁFICO MENSAL (Com volumes para o Tooltip) ---
 const chartMetrics = computed(() => {
   const mensal = dashboardData.value?.graficoMensalComparativo;
   const original = dashboardData.value?.graficos?.vendasPorMes;
@@ -74,82 +130,65 @@ const chartMetrics = computed(() => {
   
   let lastValidIndex = -1;
   for (let i = marketVolumes.length - 1; i >= 0; i--) {
-    if (marketVolumes[i] > 0) {
-      lastValidIndex = i;
-      break;
-    }
+    if (marketVolumes[i] > 0) { lastValidIndex = i; break; }
   }
 
   const baseStartX = 84;
   const chartWidth = 850;
-  const chartBottom = 286;
-  const chartHeight = 230;
+  const chartBottom = 400;
+  const chartHeight = 340;
   
-  // Lógica de centralização para períodos curtos
   let gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
   let startX = baseStartX;
-  const maxGap = 150; // Limite para os meses não ficarem muito longe
-
-  if (gap > maxGap && meses.length > 1) {
-    gap = maxGap;
-    const totalContentWidth = gap * (meses.length - 1);
-    startX = baseStartX + (chartWidth - totalContentWidth) / 2;
+  if (gap > 150 && meses.length > 1) {
+    gap = 150;
+    startX = baseStartX + (chartWidth - (gap * (meses.length - 1))) / 2;
   }
 
-  const maxMarketVolume = Math.max(...marketVolumes, 1);
-
-  const bars = marketVolumes.map((volume, index) => {
-    const height = (volume / maxMarketVolume) * 230;
-    return {
-      x: startX + (gap * index) - 18,
-      y: chartBottom - height,
-      height,
-      width: 36,
-      value: volume
-    };
-  });
+  const bars = marketVolumes.map((volume, index) => ({
+    x: startX + (gap * index) - 18,
+    y: getShareY(volume / 500, chartBottom, chartHeight),
+    height: chartBottom - getShareY(volume / 500, chartBottom, chartHeight),
+    width: 36,
+    value: volume
+  }));
 
   const allLines = mensal.linhasShareMarcas
     .filter(s => !state.hiddenEmpresas.includes(s.empresa))
+    .filter(serie => serie.valores.some(val => val > 0)) 
     .map((serie) => {
       const isHighlighted = state.empresaSelecionada === serie.empresa;
-      const validValores = serie.valores.slice(0, lastValidIndex + 1);
-      
+      const volumeSerie = original.seriesVolume?.find(v => v.empresa === serie.empresa);
       return {
         empresa: serie.empresa,
         cor: marcasConfig[serie.empresa]?.cor || '#8c8c8c',
         isHighlighted,
         strokeWidth: isHighlighted ? 3.6 : 1.8,
         strokeOpacity: isHighlighted ? 1 : 0.45,
-        points: validValores.map((val, idx) => ({
+        points: serie.valores.slice(0, lastValidIndex + 1).map((val, idx) => ({
           x: startX + (gap * idx),
           y: getShareY(val, chartBottom, chartHeight),
-          shareLabel: formatPercent(val)
+          share: val,
+          volume: volumeSerie ? volumeSerie.valores[idx] : 0,
         })),
       };
     });
 
-  const sidebarShares = (dashboardData.value?.marcas || [])
-    .filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON')
-    .sort((a, b) => b.share - a.share);
-
-  return { meses, bars, allLines, sidebarShares, startX, gap, chartBottom, lastValidIndex,
+  return { meses, bars, allLines, startX, gap, 
+    sidebarShares: (dashboardData.value?.marcas || []).filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON').sort((a, b) => b.share - a.share),
     yTicks: SHARE_TICKS.map(tick => ({ value: tick, y: getShareY(tick, chartBottom, chartHeight) }))
   };
 });
 
-// --- FORMATAÇÕES E AUXILIARES ---
-function getShareY(share, chartBottom = 286, chartHeight = 230) {
-  const safeShare = Math.max(0, Math.min(100, Number(share || 0)));
-  const adjustedShare = safeShare * 0.6;
+// --- AUXILIARES ---
+function getShareY(share, chartBottom, chartHeight) {
+  const safeShare = Math.max(0, Math.min(250, Number(share || 0)));
   const levels = [0, ...SHARE_TICKS];
-  const totalSegments = levels.length - 1;
-  for (let i = 0; i < totalSegments; i++) {
-    const start = levels[i]; const end = levels[i+1];
-    if (adjustedShare <= end || i === totalSegments - 1) {
-      const fraction = end > start ? (adjustedShare - start) / (end - start) : 0;
-      const position = i + Math.max(0, Math.min(1, fraction));
-      return chartBottom - ((position / totalSegments) * chartHeight);
+  for (let i = 0; i < levels.length - 1; i++) {
+    const start = levels[i], end = levels[i+1];
+    if (safeShare <= end || i === levels.length - 2) {
+      const fraction = end > start ? (safeShare - start) / (end - start) : 0;
+      return chartBottom - (((i + fraction) / (levels.length - 1)) * chartHeight);
     }
   }
   return chartBottom;
@@ -162,7 +201,7 @@ function formatVolumeCompact(v) {
 }
 function formatVolumeAnualMil(v) { return (Number(v || 0) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }); }
 function formatPercent(v) { return `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`; }
-function formatDateDisplay(d) { if (!d) return ''; const [y, m] = d.split('-'); return `${m}/${y}`; }
+function formatDateDisplay(d) { if (!d) return ''; const [y, m, d_] = d.split('-'); return `${m}/${y}`; }
 
 async function fetchDashboard() {
   loading.value = true;
@@ -174,42 +213,27 @@ async function fetchDashboard() {
     state.segmentos.forEach(s => params.append('segmento', s));
     const response = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
     const json = await response.json();
-    if (json.status === 'ok') {
-      if (!state.dataDe) initializeFiltersFromResponse(json.data);
-      dashboardData.value = json.data;
-    }
+    if (json.status === 'ok') dashboardData.value = json.data;
   } catch (e) { console.error(e); } finally { loading.value = false; }
 }
 
-function initializeFiltersFromResponse(data) {
-  const f = data?.filtros || {};
-  if (f.ultimaCompetencia) {
-    const ano = parseInt(f.ultimaCompetencia.ano);
-    const mes = parseInt(f.ultimaCompetencia.mes);
-    state.dataAte = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    state.dataDe = `${ano - 1}-${String(mes).padStart(2, '0')}-01`;
-  }
+function handleMouseMove(event, empresa, point, mes) {
+  tooltip.show = true;
+  tooltip.x = event.clientX;
+  tooltip.y = event.clientY;
+  tooltip.empresa = empresa;
+  tooltip.mes = mes;
+  tooltip.volume = point.volume;
+  tooltip.share = point.share;
+  tooltip.cor = marcasConfig[empresa]?.cor || '#8c8c8c';
 }
-
-function updateDateFromMonthInput(type, val) {
-  if (!val) return;
-  const [y, m] = val.split('-');
-  const dateStr = `${y}-${m}-01`;
-  if (type === 'de') state.dataDe = dateStr; else state.dataAte = dateStr;
-}
-
-const monthValueDe = computed(() => state.dataDe?.substring(0, 7) || '');
-const monthValueAte = computed(() => state.dataAte?.substring(0, 7) || '');
 
 function toggleSegmento(id) {
-  state.segmentos = state.segmentos.includes(id) 
-    ? (state.segmentos.length > 1 ? state.segmentos.filter(i => i !== id) : state.segmentos)
-    : [...state.segmentos, id];
+  state.segmentos = state.segmentos.includes(id) ? (state.segmentos.length > 1 ? state.segmentos.filter(i => i !== id) : state.segmentos) : [...state.segmentos, id];
 }
 
 function toggleLineVisibility(empresa) {
-  state.hiddenEmpresas = state.hiddenEmpresas.includes(empresa)
-    ? state.hiddenEmpresas.filter(i => i !== empresa) : [...state.hiddenEmpresas, empresa];
+  state.hiddenEmpresas = state.hiddenEmpresas.includes(empresa) ? state.hiddenEmpresas.filter(i => i !== empresa) : [...state.hiddenEmpresas, empresa];
 }
 
 onMounted(fetchDashboard);
@@ -239,8 +263,8 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
         <div class="filter-block">
           <label>Período</label>
           <div class="period-picker">
-            <div class="date-field"><span>De</span><input type="month" :value="monthValueDe" @input="updateDateFromMonthInput('de', $event.target.value)" /></div>
-            <div class="date-field"><span>Até</span><input type="month" :value="monthValueAte" @input="updateDateFromMonthInput('ate', $event.target.value)" /></div>
+            <input type="date" v-model="state.dataDe" />
+            <input type="date" v-model="state.dataAte" />
           </div>
         </div>
       </div>
@@ -250,56 +274,47 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
     <div class="pbi-content" :class="{ 'loading-opacity': loading }">
       <section class="top-section">
         <div class="kpi-grid">
-          <div class="card kpi-card" v-if="kpiMercado">
-            <div class="kpi-label">MERCADO: {{ kpiMercado.titulo }}</div>
-            <div class="kpi-val">{{ formatVolume(kpiMercado.valor) }}</div>
-            <div class="kpi-footer">
-              <span class="sub">{{ formatVolume(kpiMercado.comparativo) }}</span>
-              <span class="pill" :class="{ neg: kpiMercado.variacaoPercentual < 0 }">{{ formatPercent(kpiMercado.variacaoPercentual) }} YoY</span>
-            </div>
+          <div class="card kpi-card" v-if="kpiMercadoPeriodo">
+            <div class="kpi-label">MERCADO: {{ kpiMercadoPeriodo.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiMercadoPeriodo.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiMercadoPeriodo.comparativo) }}</span><span class="pill" :class="{ neg: kpiMercadoPeriodo.variacaoPercentual < 0 }">{{ formatPercent(kpiMercadoPeriodo.variacaoPercentual) }} YoY</span></div>
           </div>
-          <div class="card kpi-card" style="background: #fff6ed;" v-if="kpiEmpresa">
-            <div class="kpi-label">{{ state.empresaSelecionada }}: {{ kpiEmpresa.titulo }}</div>
-            <div class="kpi-val">{{ formatVolume(kpiEmpresa.valor) }}</div>
-            <div class="kpi-footer">
-              <span class="sub">{{ formatVolume(kpiEmpresa.comparativo) }}</span>
-              <span class="pill" :class="{ neg: kpiEmpresa.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresa.variacaoPercentual) }} YoY</span>
-            </div>
+          <div class="card kpi-card" v-if="kpiMercadoProjecao">
+            <div class="kpi-label">{{ kpiMercadoProjecao.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiMercadoProjecao.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiMercadoProjecao.comparativo) }}</span><span class="pill" :class="{ neg: kpiMercadoProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiMercadoProjecao.variacaoPercentual) }} YoY</span></div>
           </div>
-          <div v-if="isAnoVigente && kpiProjecao" class="card kpi-card" style="background: #f0f7ff;">
-            <div class="kpi-label">Análise Mercado Projeção (Ano)</div>
-            <div class="kpi-val">{{ formatVolume(kpiProjecao.valor) }}</div>
-            <div class="kpi-footer">
-              <span class="sub">Vs Ano Anterior Total</span>
-              <span class="pill" :class="{ neg: kpiProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiProjecao.variacaoPercentual) }}</span>
-            </div>
+          <div class="card kpi-card brand-bg" v-if="kpiEmpresaPeriodo">
+            <div class="kpi-label">{{ selectedEmpresaLabel }}: {{ kpiEmpresaPeriodo.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiEmpresaPeriodo.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaPeriodo.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaPeriodo.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaPeriodo.variacaoPercentual) }} YoY</span></div>
+          </div>
+          <div class="card kpi-card brand-bg" v-if="kpiEmpresaProjecao">
+            <div class="kpi-label">{{ kpiEmpresaProjecao.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiEmpresaProjecao.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaProjecao.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaProjecao.variacaoPercentual) }} YoY</span></div>
           </div>
         </div>
 
+        <!-- GRÁFICO ANUAL -->
         <div class="card chart-annual-expanded">
           <div class="card-title">Vendas Anual (mil m³): Mercado vs {{ selectedEmpresaLabel }}</div>
-          <div class="annual-comparison-container">
-            <div class="annual-bars-container">
-              <div v-for="item in annualChartData" :key="item.ano" class="annual-bar-col">
-                <div class="bar-wrapper">
-                  <span class="bar-txt">{{ formatVolumeAnualMil(item.valorTotal) }}</span>
-                  <div class="bar-total" :style="{ height: `${item.percentualTotal * 0.8}%` }">
-                     <div v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.valorMarca > 0" 
-                       class="bar-marca-inner" 
-                       :style="{ height: `${(item.valorMarca / item.valorTotal) * 100}%`, backgroundColor: marcasConfig[state.empresaSelecionada]?.cor || '#f58220' }">
-                    </div>
-                  </div>
-                </div>
-                <span class="bar-label">{{ item.ano }}</span>
-              </div>
-            </div>
-            <div class="annual-legend">
-              <div class="legend-item"><div class="legend-color total"></div><span>Total Mercado</span></div>
-              <div v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" class="legend-item">
-                <div class="legend-color marca" :style="{ backgroundColor: marcasConfig[state.empresaSelecionada]?.cor || '#f58220' }"></div>
-                <span>{{ state.empresaSelecionada }}</span>
-              </div>
-            </div>
+          <div class="annual-svg-container" v-if="annualChartMetrics">
+            <svg viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet">
+              <g v-for="item in annualChartMetrics.data" :key="item.ano">
+                <rect :x="item.x - annualChartMetrics.barWidth/2" :y="item.barTotalY" :width="annualChartMetrics.barWidth" :height="item.barTotalHeight" fill="#cbd5e1" rx="2" />
+                <rect v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.valorMarca > 0" :x="item.x - annualChartMetrics.barWidth/2" :y="item.barMarcaY" :width="annualChartMetrics.barWidth" :height="item.barMarcaHeight" :fill="marcasConfig[state.empresaSelecionada]?.cor" rx="2" />
+                <text :x="item.x" :y="item.barTotalY - 8" text-anchor="middle" class="svg-annual-vol">{{ formatVolumeAnualMil(item.valorTotal) }}</text>
+                <text v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.share > 0" :x="item.x" :y="annualChartMetrics.baseLineY + 18" text-anchor="middle" class="svg-annual-share" :fill="marcasConfig[state.empresaSelecionada]?.cor">{{ formatPercent(item.share) }}</text>
+                <text :x="item.x" :y="235" text-anchor="middle" class="svg-annual-year">{{ item.ano }}</text>
+              </g>
+              <polyline v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" fill="none" :stroke="marcasConfig[state.empresaSelecionada]?.cor" stroke-width="2.5" stroke-linecap="round" :points="annualChartMetrics.data.filter(d => d.valorMarca > 0).map(d => `${d.x},${d.barMarcaY}`).join(' ')" />
+              <circle v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" v-for="item in annualChartMetrics.data.filter(d => d.valorMarca > 0)" :key="'c-'+item.ano" :cx="item.x" :cy="item.barMarcaY" r="4" :fill="marcasConfig[state.empresaSelecionada]?.cor" stroke="white" stroke-width="1.5" />
+            </svg>
+          </div>
+          <div class="annual-legend">
+            <div class="legend-item"><div class="legend-color total"></div><span>Mercado</span></div>
+            <div v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" class="legend-item"><div class="legend-color marca" :style="{ background: marcasConfig[state.empresaSelecionada]?.cor }"></div><span>{{ state.empresaSelecionada }}</span></div>
           </div>
         </div>
 
@@ -315,41 +330,32 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
         </div>
       </section>
 
+      <!-- GRÁFICO MENSAL COM HOVER -->
       <section class="card main-viz">
         <div class="viz-header">
-          <div class="viz-info">
-            <h3>Vendas de Lubrificantes por Mês</h3>
-            <p class="viz-note">* Barras cinza = Volume mercado (Base 0%) | Linhas = % Share (Truncado no último mês)</p>
-          </div>
+          <div class="viz-info"><h3>Vendas de Lubrificantes por Mês</h3><p class="viz-note">* Barras cinza = Mercado | Linhas = % Share</p></div>
         </div>
-
         <div class="viz-legend">
-          <button v-for="empresa in availableEmpresas" :key="empresa" class="leg-item" 
-            :class="{ hidden: state.hiddenEmpresas.includes(empresa), active: state.empresaSelecionada === empresa }" @click="toggleLineVisibility(empresa)">
-            <span class="dot" :style="{ background: marcasConfig[empresa]?.cor || '#8c8c8c' }"></span>
-            <span>{{ empresa }}</span>
+          <button v-for="empresa in availableEmpresas" :key="empresa" class="leg-item" :class="{ active: state.empresaSelecionada === empresa, hidden: state.hiddenEmpresas.includes(empresa) }" @click="toggleLineVisibility(empresa)">
+            <span class="dot" :style="{ background: marcasConfig[empresa]?.cor || '#8c8c8c' }"></span><span>{{ empresa }}</span>
           </button>
         </div>
-
         <div class="viz-body">
           <div class="svg-area">
-            <svg viewBox="0 0 1000 380" preserveAspectRatio="none">
+            <svg viewBox="0 0 1000 450" preserveAspectRatio="none">
               <g v-for="(bar, index) in chartMetrics?.bars" :key="index">
                 <rect v-if="bar.value > 0" :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" fill="#cbd5e1" rx="4" opacity="0.35" />
-                <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis" style="fill: #475569">{{ formatVolumeAnualMil(bar.value) }}k</text>
+                <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis">{{ formatVolumeAnualMil(bar.value) }}k</text>
               </g>
-
               <g v-for="tick in chartMetrics?.yTicks" :key="tick.value">
-                <text x="44" :y="tick.y + 4" text-anchor="end" class="svg-txt-axis">{{ tick.value }}%</text>
-                <line x1="56" :y1="tick.y" x2="950" :y2="tick.y" stroke="#e2e8f0" stroke-dasharray="4" />
+                <text v-if="tick.value <= 30" x="44" :y="tick.y + 4" text-anchor="end" class="svg-txt-axis">{{ tick.value }}%</text>
+                <line v-if="tick.value <= 30 || tick.value === 100" x1="56" :y1="tick.y" x2="950" :y2="tick.y" stroke="#e2e8f0" stroke-dasharray="4" />
               </g>
-
               <g v-for="line in chartMetrics?.allLines" :key="line.empresa">
                 <polyline :points="line.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" :stroke="line.cor" :stroke-width="line.strokeWidth" :stroke-opacity="line.strokeOpacity" />
-                <circle v-for="p in line.points" :key="p.mes" :cx="p.x" :cy="p.y" :r="line.isHighlighted ? 5 : 3.5" :fill="line.cor" stroke="white" stroke-width="1.5" />
+                <circle v-for="(p, idx) in line.points" :key="idx" :cx="p.x" :cy="p.y" :r="line.isHighlighted ? 6 : 4.5" :fill="line.cor" stroke="white" stroke-width="1.5" class="chart-point" @mousemove="handleMouseMove($event, line.empresa, p, chartMetrics.meses[idx])" @mouseleave="tooltip.show = false" />
               </g>
-
-              <text v-for="(mes, i) in chartMetrics?.meses" :key="mes" :x="(chartMetrics?.startX || 84) + ((chartMetrics?.gap || 0) * i)" y="360" text-anchor="middle" class="svg-txt">{{ mes }}</text>
+              <text v-for="(mes, i) in chartMetrics?.meses" :key="mes" :x="(chartMetrics?.startX || 84) + ((chartMetrics?.gap || 0) * i)" y="430" text-anchor="middle" class="svg-txt">{{ mes }}</text>
             </svg>
           </div>
           <aside class="sidebar">
@@ -364,13 +370,16 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
       </section>
     </div>
 
-    <footer class="ia-legend">
-      <div class="ia-ico">✦</div>
-      <div class="ia-content">
-        <div class="ia-title">LubAssist IA <span class="ia-tag">Análise Ativa</span></div>
-        <p>Exibindo <b>{{ selectedEmpresaLabel }}</b> com <b>{{ state.segmentos.join(' + ') }}</b> no período de <b>{{ formatDateDisplay(state.dataDe) }}</b> a <b>{{ formatDateDisplay(state.dataAte) }}</b>.</p>
+    <!-- TOOLTIP REATIVO -->
+    <div v-if="tooltip.show" class="custom-tooltip" :style="{ top: (tooltip.y - 100) + 'px', left: (tooltip.x + 15) + 'px' }">
+      <div class="tooltip-header" :style="{ borderLeftColor: tooltip.cor }">
+        <strong>{{ tooltip.empresa }}</strong><span>{{ tooltip.mes }}</span>
       </div>
-    </footer>
+      <div class="tooltip-body">
+        <div class="tooltip-row"><span>Volume:</span> <b>{{ formatVolume(tooltip.volume) }}</b></div>
+        <div class="tooltip-row"><span>Share:</span> <b>{{ formatPercent(tooltip.share) }}</b></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -380,88 +389,121 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .loading-opacity { opacity: 0.5; pointer-events: none; }
 .pbi-filters { display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px 20px; border-radius: 8px; margin-bottom: 10px; }
 .filter-left { display: flex; align-items: flex-end; gap: 16px; }
-.filter-block { display: flex; flex-direction: column; gap: 6px; }
-.filter-block label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; }
+.filter-block label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 4px; display: block; }
 .select-control { min-width: 200px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 12px; }
 .segment-picker { display: flex; gap: 8px; }
-.segment-option { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d1d5db; border-radius: 20px; padding: 4px 12px; font-size: 11px; background: #fafafa; }
-.period-picker { display: flex; gap: 10px; background: #f8f9fa; padding: 5px 10px; border-radius: 8px; border: 1px solid #ddd; }
-.date-field { display: flex; align-items: center; gap: 5px; font-size: 11px; }
-.date-field input { border: 1px solid #ccc; border-radius: 4px; padding: 6px; }
+.segment-option { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d1d5db; border-radius: 20px; padding: 4px 12px; font-size: 11px; background: #fafafa; cursor: pointer; }
+.period-picker { display: flex; gap: 10px; }
+.period-picker input { border: 1px solid #ddd; padding: 6px; border-radius: 6px; font-size: 12px; }
 .btn-clear { background: white; border: 1px solid #333; padding: 8px 15px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 11px; }
 
-.top-section { display: grid; grid-template-columns: 1.8fr 4.2fr 1fr; gap: 15px; min-height: 320px; }
+.top-section { display: grid; grid-template-columns: 3.5fr 3fr 1fr; gap: 15px; }
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
+.card { 
+  background: white; 
+  border-radius: 10px; 
+  border: 1px solid #e0e0e0; 
+  padding: 22px; /* Aumentei de 15px para 22px para dar mais corpo */
+  display: flex; 
+  flex-direction: column;
+  min-height: 180px; /* Adicione uma altura mínima se quiser que sejam mais altos */
+}
+.brand-bg { background: #fff6ed !important; }
 
-.kpi-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.card { background: white; border-radius: 10px; border: 1px solid #e0e0e0; padding: 12px; display: flex; flex-direction: column; }
-.kpi-label, .card-title { font-size: 12px; font-weight: 700; color: #6b7280; }
-.kpi-val { font-size: 18px; font-weight: 800; margin: 8px 0; }
-.kpi-footer { display: flex; justify-content: space-between; margin-top: auto; }
-.sub { font-size: 11px; color: #6b7280; }
+.kpi-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; }
+.kpi-val { font-size: 20px; font-weight: 800; margin: 8px 0; color: #1e293b; }
+.kpi-footer { display: flex; justify-content: space-between; align-items: center; }
+.sub { font-size: 10px; color: #94a3b8; }
 .pill { background: #e6f7ed; color: #008a3e; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
 .pill.neg { background: #fee2e2; color: #dc2626; }
 
-.chart-annual-expanded { min-height: 280px; flex: 1; }
-.annual-comparison-container { position: relative; flex: 1; display: flex; flex-direction: column; }
-.annual-bars-container { display: flex; align-items: flex-end; justify-content: space-around; flex: 1; gap: 20px; margin-top: 10px; height: 180px; }
-.annual-bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
-.bar-wrapper { position: relative; width: 60px; height: 160px; display: flex; align-items: flex-end; justify-content: center; }
-.bar-total { width: 40px; background: #cbd5e1; border-radius: 4px 4px 0 0; position: relative; overflow: hidden; }
-.bar-marca-inner { width: 100%; position: absolute; bottom: 0; left: 0; transition: height 0.3s ease; }
-.bar-txt { font-size: 10px; font-weight: 700; margin-bottom: 4px; text-align: center; }
-.bar-label { font-size: 11px; color: #6b7280; margin-top: 8px; font-weight: 600; }
+.chart-annual-expanded { min-height: 310px; align-self: stretch; }
+.annual-svg-container { flex: 1; margin-top: 10px; }
+.svg-annual-vol { font-size: 10px; font-weight: 700; fill: #475569; }
+.svg-annual-year { font-size: 11px; fill: #64748b; font-weight: 600; }
+.svg-annual-share { font-size: 10px; font-weight: 800; }
+.annual-legend { display: flex; gap: 15px; margin-top: 10px; justify-content: center; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: #64748b; }
+.legend-color { width: 12px; height: 12px; border-radius: 2px; }
+.legend-color.total { background: #cbd5e1; }
+.legend-color.marca { border-radius: 2px; }
 
-.segment-container { display: flex; align-items: flex-end; justify-content: space-between; flex: 1; gap: 8px; margin-top: 10px; }
-.seg-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
-.seg-bar { width: 30px; border-radius: 3px 3px 0 0; }
+.segment-container { display: flex; align-items: flex-end; justify-content: space-around; flex: 1; margin-top: 10px; }
+.seg-col { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+.seg-bar { width: 30px; border-radius: 4px 4px 0 0; }
+.bar-txt { font-size: 10px; font-weight: 700; margin-bottom: 5px; }
+.bar-label { font-size: 11px; margin-top: 5px; color: #64748b; }
 
-.main-viz { min-height: 520px; margin-top: 15px; }
-.viz-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.main-viz { min-height: 600px; margin-top: 15px; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0; }
 .leg-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid #e5e7eb; border-radius: 20px; background: white; cursor: pointer; font-size: 11px; }
 .leg-item.active { border-color: #f58220; color: #f58220; font-weight: 700; }
-.dot { width: 12px; height: 3px; border-radius: 2px; }
+.leg-item.hidden { opacity: 0.4; text-decoration: line-through; }
+.dot { width: 10px; height: 3px; border-radius: 2px; }
 .viz-body { display: flex; gap: 20px; flex: 1; }
-.svg-area { flex: 1; min-height: 400px; }
-.sidebar { width: 240px; border-left: 1px solid #eee; padding-left: 15px; }
-.side-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.brand-logo-img { width: 20px; height: 20px; object-fit: contain; }
-.badge.orange { background: #f58220; color: white; }
-.svg-txt { font-size: 11px; fill: #9ca3af; }
-.svg-txt-axis { font-size: 10px; fill: #9ca3af; font-weight: 700; }
+.svg-area { flex: 1; }
 
-.ia-legend { 
-  margin-top: 20px; 
-  padding: 16px 20px; 
-  background: #1e293b; 
-  border-radius: 12px; 
-  border-left: 4px solid #f58220; 
-  display: flex; 
-  align-items: flex-start; 
-  gap: 12px; 
+
+
+.sidebar { 
+  width: 220px; 
+  border-left: 1px solid #eee; 
+  padding-left: 15px; 
 }
 
-.ia-title { 
-  font-weight: 700; 
-  font-size: 14px; 
-  color: #ffffff; 
-  margin-bottom: 6px; 
+.side-item { 
   display: flex; 
   align-items: center; 
-  gap: 8px; 
+  gap: 10px; 
+  margin-bottom: 8px;
+  width: 100%; /* Garante que use todo o espaço da sidebar */
 }
 
-.ia-content p { 
-  margin: 0; 
+.brand-logo-img { 
+  width: 18px; 
+  height: 18px; 
+  object-fit: contain; 
+}
+
+.name {
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.name.bold-txt {
+  font-weight: 700;
+}
+
+/* ESTA É A MUDANÇA PRINCIPAL */
+.badge { 
+  background: #f1f5f9; /* Fundo cinza claro para todas as marcas */
+  color: #475569; 
+  border-radius: 4px; 
+  padding: 2px 6px; 
   font-size: 12px; 
-  color: #e2e8f0; 
-  line-height: 1.4; 
+  font-weight: 700;
+  margin-left: auto; /* Empurra o badge para a extrema direita */
 }
 
-.ia-content b { 
-  color: #f58220; 
-  font-weight: 600; 
+/* Quando a marca estiver selecionada, sobrepõe com a cor laranja */
+.badge.orange { 
+  background: #f58220; 
+  color: white; 
+  font-size: 12px;
 }
 
-.ia-ico { font-size: 24px; color: #f58220; }
-.ia-tag { background: #f58220; color: white; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
+
+.svg-txt-axis { font-size: 10px; fill: #94a3b8; font-weight: 700; }
+.svg-txt { font-size: 11px; fill: #94a3b8; }
+
+/* ESTILOS DO TOOLTIP */
+.chart-point { cursor: pointer; transition: r 0.2s ease; }
+.chart-point:hover { r: 8 !important; }
+.custom-tooltip { position: fixed; z-index: 9999; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); pointer-events: none; font-size: 12px; min-width: 150px; }
+.tooltip-header { border-left: 4px solid; padding-left: 8px; margin-bottom: 5px; display: flex; flex-direction: column; }
+.tooltip-header strong { font-size: 13px; color: #1e293b; }
+.tooltip-header span { font-size: 11px; color: #64748b; }
+.tooltip-row { display: flex; justify-content: space-between; margin-top: 2px; }
+.tooltip-row span { color: #64748b; }
+.tooltip-row b { color: #1e293b; }
 </style>
