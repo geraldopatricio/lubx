@@ -41,8 +41,8 @@ function updateDateFromMonthInput(type, val) {
 }
 
 const marcasConfig = {
-  TOTALENERGIES: { cor: '#f58220', logo: 'totalenergies' },
-  YPF: { cor: '#00529b', logo: 'ypf' },
+  TOTALENERGIES: { cor: '#8C6239', logo: 'totalenergies' },
+  YPF: { cor: '#63666A', logo: 'ypf' },
   VIBRA: { cor: '#004415', logo: 'vibra' },
   PETRONAS: { cor: '#00A79D', logo: 'petronas' },
   CASTROL: { cor: '#E10600', logo: 'castrol' },
