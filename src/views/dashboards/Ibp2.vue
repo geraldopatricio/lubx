@@ -63,7 +63,7 @@ const annualChartData = computed(() => {
   });
 });
 
-// --- GRÁFICO MENSAL (AJUSTES 1 E 2 APLICADOS AQUI) ---
+// --- GRÁFICO MENSAL (AJUSTE DE CENTRALIZAÇÃO APLICADO AQUI) ---
 const chartMetrics = computed(() => {
   const mensal = dashboardData.value?.graficoMensalComparativo;
   const original = dashboardData.value?.graficos?.vendasPorMes;
@@ -72,7 +72,6 @@ const chartMetrics = computed(() => {
   const meses = original.meses || [];
   const marketVolumes = mensal.barrasMercadoTotal.map(v => Number(v.valor || 0));
   
-  // AJUSTE 2: Encontrar o último índice que possui dados (volume > 0)
   let lastValidIndex = -1;
   for (let i = marketVolumes.length - 1; i >= 0; i--) {
     if (marketVolumes[i] > 0) {
@@ -81,31 +80,39 @@ const chartMetrics = computed(() => {
     }
   }
 
-  const startX = 84;
+  const baseStartX = 84;
   const chartWidth = 850;
   const chartBottom = 286;
   const chartHeight = 230;
-  const gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
+  
+  // Lógica de centralização para períodos curtos
+  let gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
+  let startX = baseStartX;
+  const maxGap = 150; // Limite para os meses não ficarem muito longe
+
+  if (gap > maxGap && meses.length > 1) {
+    gap = maxGap;
+    const totalContentWidth = gap * (meses.length - 1);
+    startX = baseStartX + (chartWidth - totalContentWidth) / 2;
+  }
+
   const maxMarketVolume = Math.max(...marketVolumes, 1);
 
-  // AJUSTE 1: Barras saindo da base (0%)
   const bars = marketVolumes.map((volume, index) => {
-    const height = (volume / maxMarketVolume) * 230; // Usando altura total disponível
+    const height = (volume / maxMarketVolume) * 230;
     return {
       x: startX + (gap * index) - 18,
-      y: chartBottom - height, // Posição calculada para "subir" da base
+      y: chartBottom - height,
       height,
       width: 36,
       value: volume
     };
   });
 
-  // AJUSTE 2: Linhas truncadas no último mês com dados
   const allLines = mensal.linhasShareMarcas
     .filter(s => !state.hiddenEmpresas.includes(s.empresa))
     .map((serie) => {
       const isHighlighted = state.empresaSelecionada === serie.empresa;
-      // Filtramos os valores para que a linha não continue após o lastValidIndex
       const validValores = serie.valores.slice(0, lastValidIndex + 1);
       
       return {
@@ -134,7 +141,7 @@ const chartMetrics = computed(() => {
 // --- FORMATAÇÕES E AUXILIARES ---
 function getShareY(share, chartBottom = 286, chartHeight = 230) {
   const safeShare = Math.max(0, Math.min(100, Number(share || 0)));
-  const adjustedShare = safeShare * 0.6; // Mantém as linhas na parte de baixo
+  const adjustedShare = safeShare * 0.6;
   const levels = [0, ...SHARE_TICKS];
   const totalSegments = levels.length - 1;
   for (let i = 0; i < totalSegments; i++) {
@@ -327,19 +334,16 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
         <div class="viz-body">
           <div class="svg-area">
             <svg viewBox="0 0 1000 380" preserveAspectRatio="none">
-              <!-- AJUSTE 1: Barras saindo do eixo zero (chartBottom) -->
               <g v-for="(bar, index) in chartMetrics?.bars" :key="index">
                 <rect v-if="bar.value > 0" :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" fill="#cbd5e1" rx="4" opacity="0.35" />
                 <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis" style="fill: #475569">{{ formatVolumeAnualMil(bar.value) }}k</text>
               </g>
 
-              <!-- Grade Y (Share %) -->
               <g v-for="tick in chartMetrics?.yTicks" :key="tick.value">
                 <text x="44" :y="tick.y + 4" text-anchor="end" class="svg-txt-axis">{{ tick.value }}%</text>
                 <line x1="56" :y1="tick.y" x2="950" :y2="tick.y" stroke="#e2e8f0" stroke-dasharray="4" />
               </g>
 
-              <!-- AJUSTE 2: Linhas truncadas (não descem para zero após os dados) -->
               <g v-for="line in chartMetrics?.allLines" :key="line.empresa">
                 <polyline :points="line.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" :stroke="line.cor" :stroke-width="line.strokeWidth" :stroke-opacity="line.strokeOpacity" />
                 <circle v-for="p in line.points" :key="p.mes" :cx="p.x" :cy="p.y" :r="line.isHighlighted ? 5 : 3.5" :fill="line.cor" stroke="white" stroke-width="1.5" />
@@ -371,7 +375,6 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 </template>
 
 <style scoped>
-/* ESTILOS PRESERVADOS INTEGRALMENTE */
 .pbi-layout { background: #f3f3f3; min-height: 100vh; padding: 15px; font-family: 'Segoe UI', sans-serif; }
 .pbi-content { display: flex; flex-direction: column; gap: 15px; min-width: 1200px; }
 .loading-opacity { opacity: 0.5; pointer-events: none; }
@@ -426,11 +429,10 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .svg-txt { font-size: 11px; fill: #9ca3af; }
 .svg-txt-axis { font-size: 10px; fill: #9ca3af; font-weight: 700; }
 
-/* Localize este bloco e altere as linhas de background e cores */
 .ia-legend { 
   margin-top: 20px; 
   padding: 16px 20px; 
-  background: #1e293b; /* Altera para fundo Dark (Azul petróleo escuro) */
+  background: #1e293b; 
   border-radius: 12px; 
   border-left: 4px solid #f58220; 
   display: flex; 
@@ -441,7 +443,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .ia-title { 
   font-weight: 700; 
   font-size: 14px; 
-  color: #ffffff; /* Altera o título para Branco */
+  color: #ffffff; 
   margin-bottom: 6px; 
   display: flex; 
   align-items: center; 
@@ -451,16 +453,15 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .ia-content p { 
   margin: 0; 
   font-size: 12px; 
-  color: #e2e8f0; /* Altera o texto descritivo para um Branco acinzentado */
+  color: #e2e8f0; 
   line-height: 1.4; 
 }
 
 .ia-content b { 
-  color: #f58220; /* Mantém os destaques em Laranja para boa leitura no dark */
+  color: #f58220; 
   font-weight: 600; 
 }
 
 .ia-ico { font-size: 24px; color: #f58220; }
-
 .ia-tag { background: #f58220; color: white; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
 </style>
