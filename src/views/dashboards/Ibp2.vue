@@ -200,8 +200,8 @@ const chartMetrics = computed(() => {
 
   const baseStartX = 84;
   const chartWidth = 850;
-  const chartBottom = 400;
-  const chartHeight = 340;
+  const chartBottom = 415;
+  const chartHeight = 380;
   
   let gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
   let startX = baseStartX;
@@ -247,7 +247,7 @@ const chartMetrics = computed(() => {
 
 // --- AUXILIARES ---
 function getShareY(share, chartBottom, chartHeight) {
-  const safeShare = Math.max(0, Math.min(250, Number(share || 0)));
+  const safeShare = Math.max(0, Math.min(450, Number(share || 0)));
   const levels = [0, ...SHARE_TICKS];
   for (let i = 0; i < levels.length - 1; i++) {
     const start = levels[i], end = levels[i+1];
@@ -258,6 +258,7 @@ function getShareY(share, chartBottom, chartHeight) {
   }
   return chartBottom;
 }
+
 
 function formatVolume(v) { return `${Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m³`; }
 function formatVolumeCompact(v) { 
