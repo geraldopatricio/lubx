@@ -29,6 +29,17 @@ const tooltip = reactive({
   cor: ''
 });
 
+const monthValueDe = computed(() => state.dataDe?.substring(0, 7) || '');
+const monthValueAte = computed(() => state.dataAte?.substring(0, 7) || '');
+
+// Função para atualizar o estado adicionando o dia 01 novamente
+function updateDateFromMonthInput(type, val) {
+  if (!val) return;
+  const dateStr = `${val}-01`; // Transforma "2025-07" em "2025-07-01"
+  if (type === 'de') state.dataDe = dateStr; 
+  else state.dataAte = dateStr;
+}
+
 const marcasConfig = {
   TOTALENERGIES: { cor: '#f58220', logo: 'totalenergies' },
   YPF: { cor: '#00529b', logo: 'ypf' },
@@ -263,8 +274,22 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
         <div class="filter-block">
           <label>Período</label>
           <div class="period-picker">
-            <input type="date" v-model="state.dataDe" />
-            <input type="date" v-model="state.dataAte" />
+            <div class="date-field">
+              <span>De</span>
+              <input 
+                type="month" 
+                :value="monthValueDe" 
+                @input="updateDateFromMonthInput('de', $event.target.value)" 
+              />
+            </div>
+            <div class="date-field">
+              <span>Até</span>
+              <input 
+                type="month" 
+                :value="monthValueAte" 
+                @input="updateDateFromMonthInput('ate', $event.target.value)" 
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -393,8 +418,46 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .select-control { min-width: 200px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 12px; }
 .segment-picker { display: flex; gap: 8px; }
 .segment-option { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d1d5db; border-radius: 20px; padding: 4px 12px; font-size: 11px; background: #fafafa; cursor: pointer; }
-.period-picker { display: flex; gap: 10px; }
-.period-picker input { border: 1px solid #ddd; padding: 6px; border-radius: 6px; font-size: 12px; }
+.period-picker { 
+  display: flex; 
+  gap: 12px; 
+  background: #f8fafc; 
+  padding: 6px 12px; 
+  border-radius: 8px; 
+  border: 1px solid #cbd5e1; 
+  align-items: center;
+}
+
+.date-field { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  font-size: 11px; 
+  color: #64748b;
+  font-weight: 600;
+}
+
+.date-field input { 
+  border: 1px solid #e2e8f0; 
+  border-radius: 6px; 
+  padding: 5px 8px; 
+  font-size: 12px; 
+  color: #1e293b;
+  cursor: pointer;
+  background: white;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.date-field input:hover {
+  border-color: #f58220;
+}
+
+/* Customização do ícone do calendário para alguns browsers */
+.date-field input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(48%) sepia(13%) stroke(1px, #f58220); /* Opcional: muda a cor do ícone */
+}
 .btn-clear { background: white; border: 1px solid #333; padding: 8px 15px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 11px; }
 
 .top-section { display: grid; grid-template-columns: 3.5fr 3fr 1fr; gap: 15px; }
