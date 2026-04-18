@@ -32,6 +32,7 @@ function calcularPeriodoUltimos13Meses() {
   };
 }
 
+const mesSelecionadoIndex = ref(null); // null = nenhum selecionado
 
 const periodoInicial = calcularPeriodoUltimos13Meses();
 
@@ -150,8 +151,8 @@ const annualChartMetrics = computed(() => {
   if (!comp?.barrasMercadoTotal) return null;
 
   const chartWidth = 600;
-  const chartHeight = 220;
-  const paddingBottom = 45;
+  const chartHeight = 180;
+  const paddingBottom = 25;
   const paddingTop = 30;
   const usableHeight = chartHeight - paddingTop - paddingBottom;
   const baseLineY = chartHeight - paddingBottom;
@@ -201,7 +202,7 @@ const chartMetrics = computed(() => {
   const baseStartX = 84;
   const chartWidth = 850;
   const chartBottom = 415;
-  const chartHeight = 380;
+  const chartHeight = 360;
   
   let gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
   let startX = baseStartX;
@@ -240,7 +241,37 @@ const chartMetrics = computed(() => {
     });
 
   return { meses, bars, allLines, startX, gap, 
-    sidebarShares: (dashboardData.value?.marcas || []).filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON').sort((a, b) => b.share - a.share),
+    sidebarShares: (() => {
+  const marcas = dashboardData.value?.graficos?.vendasPorMes?.seriesVolume || [];
+  const mercado = mensal.barrasMercadoTotal.map(v => Number(v.valor || 0));
+
+  return marcas.map(marca => {
+    let share = 0;
+
+    if (mesSelecionadoIndex.value !== null) {
+      // 📌 SHARE DE UM MÊS ESPECÍFICO
+      const i = mesSelecionadoIndex.value;
+      const volumeMarca = marca.valores[i] || 0;
+      const volumeMercado = mercado[i] || 0;
+
+      share = volumeMercado > 0 ? (volumeMarca / volumeMercado) * 100 : 0;
+
+    } else {
+      // 📌 SHARE AGREGADO (TODOS OS MESES)
+      const totalMarca = marca.valores.reduce((acc, v) => acc + (v || 0), 0);
+      const totalMercado = mercado.reduce((acc, v) => acc + (v || 0), 0);
+
+      share = totalMercado > 0 ? (totalMarca / totalMercado) * 100 : 0;
+    }
+
+    return {
+      nome: marca.empresa,
+      share
+    };
+  })
+  .filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON')
+  .sort((a, b) => b.share - a.share);
+})().filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON').sort((a, b) => b.share - a.share),
     yTicks: SHARE_TICKS.map(tick => ({ value: tick, y: getShareY(tick, chartBottom, chartHeight) }))
   };
 });
@@ -302,6 +333,10 @@ function toggleLineVisibility(empresa) {
   state.hiddenEmpresas = state.hiddenEmpresas.includes(empresa) ? state.hiddenEmpresas.filter(i => i !== empresa) : [...state.hiddenEmpresas, empresa];
 }
 
+function selecionarMes(index) {
+  mesSelecionadoIndex.value = mesSelecionadoIndex.value === index ? null : index;
+}
+
 onMounted(fetchDashboard);
 watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmentos], fetchDashboard);
 </script>
@@ -322,7 +357,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
           <div class="segment-picker">
             <label v-for="segmento in availableSegmentos" :key="segmento.id" class="segment-option">
               <input type="checkbox" :checked="state.segmentos.includes(segmento.id)" @change="toggleSegmento(segmento.id)" />
-              <span>{{ segmento.label }}</span>
+              <span>&nbsp;{{ segmento.label }}</span>
             </label>
           </div>
         </div>
@@ -427,7 +462,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
                 <rect v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.valorMarca > 0" :x="item.x - annualChartMetrics.barWidth/2" :y="item.barMarcaY" :width="annualChartMetrics.barWidth" :height="item.barMarcaHeight" :fill="marcasConfig[state.empresaSelecionada]?.cor" rx="2" />
                 <text :x="item.x" :y="item.barTotalY - 8" text-anchor="middle" class="svg-annual-vol">{{ formatVolumeAnualMil(item.valorTotal) }}</text>
                 <text v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.share > 0" :x="item.x" :y="annualChartMetrics.baseLineY + 18" text-anchor="middle" class="svg-annual-share" :fill="marcasConfig[state.empresaSelecionada]?.cor">{{ formatPercent(item.share) }}</text>
-                <text :x="item.x" :y="235" text-anchor="middle" class="svg-annual-year">{{ item.ano }}</text>
+                <text :x="item.x" :y="175" text-anchor="middle" class="svg-annual-year">{{ item.ano }}</text>
               </g>
               <polyline v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" fill="none" :stroke="marcasConfig[state.empresaSelecionada]?.cor" stroke-width="2.5" stroke-linecap="round" :points="annualChartMetrics.data.filter(d => d.valorMarca > 0).map(d => `${d.x},${d.barMarcaY}`).join(' ')" />
               <circle v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" v-for="item in annualChartMetrics.data.filter(d => d.valorMarca > 0)" :key="'c-'+item.ano" :cx="item.x" :cy="item.barMarcaY" r="4" :fill="marcasConfig[state.empresaSelecionada]?.cor" stroke="white" stroke-width="1.5" />
@@ -465,7 +500,18 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
           <div class="svg-area">
             <svg viewBox="0 0 1000 450" preserveAspectRatio="none">
               <g v-for="(bar, index) in chartMetrics?.bars" :key="index">
-                <rect v-if="bar.value > 0" :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" fill="#cbd5e1" rx="4" opacity="0.35" />
+                <rect 
+                  v-if="bar.value > 0"
+                  :x="bar.x" 
+                  :y="bar.y" 
+                  :width="bar.width" 
+                  :height="bar.height" 
+                  fill="#cbd5e1" 
+                  rx="4" 
+                  :opacity="mesSelecionadoIndex === index ? 0.8 : 0.35"
+                  @click="selecionarMes(index)"
+                  style="cursor: pointer"
+                />
                 <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis">{{ formatVolumeAnualMil(bar.value) }}k</text>
               </g>
               <g v-for="tick in chartMetrics?.yTicks" :key="tick.value">
@@ -513,7 +559,19 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .filter-block label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 4px; display: block; }
 .select-control { min-width: 200px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 12px; }
 .segment-picker { display: flex; gap: 8px; }
-.segment-option { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d1d5db; border-radius: 20px; padding: 4px 12px; font-size: 11px; background: #fafafa; cursor: pointer; }
+
+.segment-option { 
+  display: inline-flex; 
+  align-items: center; 
+  gap: 14px; 
+  border: 1px solid #d1d5db; 
+  border-radius: 10px; 
+  padding: 4px 12px; 
+  font-size: 11px; 
+  background: #fafafa; 
+  cursor: pointer; 
+  }
+
 /* --- NOVO ESTILO CALENDÁRIO --- */
 .period-picker { 
   display: flex; 
@@ -682,10 +740,10 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
   background: white; 
   border-radius: 10px; 
   border: 1px solid #e0e0e0; 
-  padding: 22px; /* Aumentei de 15px para 22px para dar mais corpo */
+  padding: 12px; /* Aumentei de 15px para 22px para dar mais corpo */
   display: flex; 
   flex-direction: column;
-  min-height: 180px; /* Adicione uma altura mínima se quiser que sejam mais altos */
+  min-height: 130px; /* Adicione uma altura mínima se quiser que sejam mais altos */
 }
 .brand-bg { background: #fff6ed !important; }
 
@@ -696,8 +754,8 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .pill { background: #e6f7ed; color: #008a3e; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
 .pill.neg { background: #fee2e2; color: #dc2626; }
 
-.chart-annual-expanded { min-height: 310px; align-self: stretch; }
-.annual-svg-container { flex: 1; margin-top: 10px; }
+.chart-annual-expanded { min-height: 210px; align-self: stretch; }
+.annual-svg-container { height: 180px; margin-top: 10px; }
 .svg-annual-vol { font-size: 10px; font-weight: 700; fill: #475569; }
 .svg-annual-year { font-size: 11px; fill: #64748b; font-weight: 600; }
 .svg-annual-share { font-size: 10px; font-weight: 800; }
@@ -731,8 +789,10 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 .side-item { 
   display: flex; 
   align-items: center; 
+  padding: 2px;
   gap: 10px; 
   margin-bottom: 8px;
+  margin-top: 8px;
   width: 100%; /* Garante que use todo o espaço da sidebar */
 }
 
