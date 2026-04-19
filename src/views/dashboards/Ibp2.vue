@@ -36,6 +36,17 @@ const mesSelecionadoIndex = ref(null); // null = nenhum selecionado
 
 const periodoInicial = calcularPeriodoUltimos13Meses();
 
+const anoAtual = new Date().getFullYear();
+
+const periodoIncluiAnoAtual = computed(() => {
+  if (!state.dataDe || !state.dataAte) return false;
+
+  const anoDe = new Date(state.dataDe).getFullYear();
+  const anoAte = new Date(state.dataAte).getFullYear();
+
+  return anoAtual >= anoDe && anoAtual <= anoAte;
+});
+
 const state = reactive({
   empresaSelecionada: ALL_BRANDS_VALUE,
   segmentos: [DEFAULT_SEGMENT],
@@ -117,11 +128,32 @@ const projecaoDados = computed(() => dashboardData.value?.cardsCalculados?.proje
 const kpiMercadoProjecao = computed(() => {
   const p = projecaoDados.value?.mercado;
   if (!p) return null;
+
+  // Extraímos os anos diretamente das strings "YYYY-MM-DD" para evitar erros de fuso horário
+  const anoDe = state.dataDe ? parseInt(state.dataDe.split('-')[0]) : 0;
+  const anoAte = state.dataAte ? parseInt(state.dataAte.split('-')[0]) : 0;
+
+  // LÓGICA: Se qualquer uma das pontas do filtro for 2025, mostra 0.
+  // Se ambas as pontas forem 2026 (ou maior), permite mostrar o cálculo.
+  const contem2025 = (anoDe === 2025 || anoAte === 2025);
+
+  if (contem2025) {
+    return {
+      titulo: 'Análise Mercado - Projeção',
+      valor: 0,
+      comparativo: 0,
+      variacaoPercentual: 0
+    };
+  }
+
+  // Se não contém 2025, realiza o cálculo normalmente
   return {
     titulo: 'Análise Mercado - Projeção',
     valor: p.valorProjetado,
     comparativo: p.comparativoAnoAnteriorProjetado,
-    variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+    variacaoPercentual: p.comparativoAnoAnteriorProjetado > 0 
+      ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 
+      : 0
   };
 });
 
@@ -445,7 +477,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
             <div class="kpi-val">{{ formatVolume(kpiEmpresaPeriodo.valor) }}</div>
             <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaPeriodo.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaPeriodo.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaPeriodo.variacaoPercentual) }} YoY</span></div>
           </div>
-          <div class="card kpi-card brand-bg" v-if="kpiEmpresaProjecao">
+          <div class="card kpi-card brand-bg" v-if="kpiEmpresaProjecao && periodoIncluiAnoAtual">
             <div class="kpi-label">{{ kpiEmpresaProjecao.titulo }}</div>
             <div class="kpi-val">{{ formatVolume(kpiEmpresaProjecao.valor) }}</div>
             <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaProjecao.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaProjecao.variacaoPercentual) }} YoY</span></div>
@@ -460,8 +492,20 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
               <g v-for="item in annualChartMetrics.data" :key="item.ano">
                 <rect :x="item.x - annualChartMetrics.barWidth/2" :y="item.barTotalY" :width="annualChartMetrics.barWidth" :height="item.barTotalHeight" fill="#cbd5e1" rx="2" />
                 <rect v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.valorMarca > 0" :x="item.x - annualChartMetrics.barWidth/2" :y="item.barMarcaY" :width="annualChartMetrics.barWidth" :height="item.barMarcaHeight" :fill="marcasConfig[state.empresaSelecionada]?.cor" rx="2" />
-                <text :x="item.x" :y="item.barTotalY - 8" text-anchor="middle" class="svg-annual-vol">{{ formatVolumeAnualMil(item.valorTotal) }}</text>
-                <text v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.share > 0" :x="item.x" :y="annualChartMetrics.baseLineY + 18" text-anchor="middle" class="svg-annual-share" :fill="marcasConfig[state.empresaSelecionada]?.cor">{{ formatPercent(item.share) }}</text>
+                <text :x="item.x" :y="item.barTotalY - 8" text-anchor="middle" class="svg-annual-vol">
+                  {{ formatVolume(item.valorTotal).replace(' m³', '') }}
+                </text>
+                <text 
+                  v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.share > 0" 
+                  :x="item.x" 
+                  :y="item.barMarcaY - 12" 
+                  text-anchor="middle" 
+                  class="svg-annual-share" 
+                  :fill="marcasConfig[state.empresaSelecionada]?.cor"
+                  style="font-weight: 800; font-size: 11px;"
+                >
+                  {{ formatPercent(item.share) }}
+                </text>
                 <text :x="item.x" :y="175" text-anchor="middle" class="svg-annual-year">{{ item.ano }}</text>
               </g>
               <polyline v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" fill="none" :stroke="marcasConfig[state.empresaSelecionada]?.cor" stroke-width="2.5" stroke-linecap="round" :points="annualChartMetrics.data.filter(d => d.valorMarca > 0).map(d => `${d.x},${d.barMarcaY}`).join(' ')" />
@@ -512,7 +556,9 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
                   @click="selecionarMes(index)"
                   style="cursor: pointer"
                 />
-                <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis">{{ formatVolumeAnualMil(bar.value) }}k</text>
+                <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis">
+                  {{ formatVolume(bar.value).replace(' m³', '') }}
+                </text>
               </g>
               <g v-for="tick in chartMetrics?.yTicks" :key="tick.value">
                 <text v-if="tick.value <= 30" x="44" :y="tick.y + 4" text-anchor="end" class="svg-txt-axis">{{ tick.value }}%</text>
