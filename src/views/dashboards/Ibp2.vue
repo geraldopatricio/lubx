@@ -157,14 +157,42 @@ const kpiMercadoProjecao = computed(() => {
   };
 });
 
+// const kpiEmpresaProjecao = computed(() => {
+//   const p = projecaoDados.value?.empresa;
+//   if (!p) return null;
+//   return {
+//     titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+//     valor: p.valorProjetado,
+//     comparativo: p.comparativoAnoAnteriorProjetado,
+//     variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+//   };
+// });
+
 const kpiEmpresaProjecao = computed(() => {
   const p = projecaoDados.value?.empresa;
   if (!p) return null;
+
+  // Extraímos os anos para validação
+  const anoDe = state.dataDe ? parseInt(state.dataDe.split('-')[0]) : 0;
+  const anoAte = state.dataAte ? parseInt(state.dataAte.split('-')[0]) : 0;
+  const contem2025 = (anoDe === 2025 || anoAte === 2025);
+
+  if (contem2025) {
+    return {
+      titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+      valor: 0,
+      comparativo: 0,
+      variacao: 0
+    };
+  }
+
   return {
     titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
     valor: p.valorProjetado,
     comparativo: p.comparativoAnoAnteriorProjetado,
-    variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+    variacao: p.comparativoAnoAnteriorProjetado > 0 
+      ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 
+      : 0
   };
 });
 
@@ -326,7 +354,7 @@ function getShareY(share, chartBottom, chartHeight) {
 function formatVolume(v) { return `${Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m³`; }
 function formatVolumeCompact(v) { 
   const n = Number(v || 0);
-  return n >= 1000 ? `${(n/1000).toLocaleString('pt-BR', {maximumFractionDigits:1})} mil m³` : `${n.toLocaleString('pt-BR')} m³`;
+  return n >= 1000 ? `${(n/1000).toLocaleString('pt-BR', {maximumFractionDigits:1})} m³` : `${n.toLocaleString('pt-BR')} m³`;
 }
 function formatVolumeAnualMil(v) { return (Number(v || 0) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }); }
 function formatPercent(v) { return `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`; }
@@ -486,7 +514,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
 
         <!-- GRÁFICO ANUAL -->
         <div class="card chart-annual-expanded">
-          <div class="card-title">Vendas Anual (mil m³): Mercado vs {{ selectedEmpresaLabel }}</div>
+          <div class="card-title">Vendas Anual (m³): Mercado vs {{ selectedEmpresaLabel }}</div>
           <div class="annual-svg-container" v-if="annualChartMetrics">
             <svg viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet">
               <g v-for="item in annualChartMetrics.data" :key="item.ano">
@@ -533,7 +561,7 @@ watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmen
       <!-- GRÁFICO MENSAL COM HOVER -->
       <section class="card main-viz">
         <div class="viz-header">
-          <div class="viz-info"><h3>Vendas de Lubrificantes por Mês</h3><p class="viz-note">* Barras cinza = Mercado | Linhas = % Share</p></div>
+          <div class="viz-info"><h3>Vendas de Lubrificantes por Mês (m³)</h3><p class="viz-note">* Barras cinza = Mercado | Linhas = % Share</p></div>
         </div>
         <div class="viz-legend">
           <button v-for="empresa in availableEmpresas" :key="empresa" class="leg-item" :class="{ active: state.empresaSelecionada === empresa, hidden: state.hiddenEmpresas.includes(empresa) }" @click="toggleLineVisibility(empresa)">
