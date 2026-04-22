@@ -1,274 +1,920 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-// --- DADOS DO GRÁFICO DE LINHAS (LUBRIFICANTES) ---
-const marcas = [
-  { nome: 'YPF', cor: '#0070c0' },
-  { nome: 'VIBRA', cor: '#004415' },
-  { nome: 'VALVOLINE', cor: '#00acee' },
-  { nome: 'TOTALENERGIES', cor: '#ff0000' },
-  { nome: 'RAIZEN', cor: '#990093' },
-  { nome: 'PETRONAS', cor: '#00a19c' },
-  { nome: 'MOOVE', cor: '#85bd00' },
-  { nome: 'LWART', cor: '#006cb7' },
-  { nome: 'ICONIC', cor: '#ff511f' },
-  { nome: 'CASTROL', cor: '#f00023' }
-];
+const API_BASE = 'https://lubx-api.lubconsulta.com.br/bi/ipb';
+const DEFAULT_SEGMENT = 'REVENDEDOR';
+const ALL_BRANDS_VALUE = 'TODAS';
+const SHARE_TICKS = [1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 150];
 
-const mesesLista = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const loading = ref(true);
+const dashboardData = ref(null);
 
-const marcasAtivas = ref(marcas.map(m => m.nome));
-const mesInicio = ref(0);
-const mesFim = ref(11);
 
-const dadosVendasOriginal = {
-  'YPF':           [5, 6, 8, 7, 9, 6, 8, 7, 8, 9, 7, 6],
-  'VIBRA':         [22, 20, 24, 23, 25, 22, 24, 25, 26, 26, 22, 18],
-  'VALVOLINE':     [3, 2, 4, 3, 4, 3, 4, 3, 4, 4, 3, 2],
-  'TOTALENERGIES': [5, 4, 6, 5, 7, 5, 6, 6, 5, 7, 5, 4],
-  'RAIZEN':        [18, 16, 17, 16, 19, 15, 20, 19, 21, 18, 17, 15],
-  'PETRONAS':      [14, 15, 13, 15, 16, 10, 14, 15, 16, 15, 13, 12],
-  'MOOVE':         [25, 20, 22, 24, 23, 20, 26, 25, 24, 28, 22, 19],
-  'LWART':         [4, 5, 4, 6, 4, 5, 4, 4, 5, 4, 4, 3],
-  'ICONIC':        [35, 30, 38, 36, 40, 35, 42, 40, 41, 45, 38, 32],
-  'CASTROL':       [8, 7, 9, 8, 10, 8, 9, 9, 8, 10, 8, 7]
+function calcularPeriodoUltimos13Meses() {
+  const hoje = new Date();
+
+  // último dia do mês anterior
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+
+  // início 13 meses antes
+  const inicio = new Date(fim);
+  inicio.setMonth(inicio.getMonth() - 12);
+
+  const formatar = (data) => {
+    const y = data.getFullYear();
+    const m = String(data.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  };
+
+  return {
+    dataDe: formatar(inicio),
+    dataAte: formatar(fim),
+  };
+}
+
+const mesSelecionadoIndex = ref(null); // null = nenhum selecionado
+
+const periodoInicial = calcularPeriodoUltimos13Meses();
+
+const anoAtual = new Date().getFullYear();
+
+const periodoIncluiAnoAtual = computed(() => {
+  if (!state.dataDe || !state.dataAte) return false;
+
+  const anoDe = new Date(state.dataDe).getFullYear();
+  const anoAte = new Date(state.dataAte).getFullYear();
+
+  return anoAtual >= anoDe && anoAtual <= anoAte;
+});
+
+const state = reactive({
+  empresaSelecionada: ALL_BRANDS_VALUE,
+  segmentos: [DEFAULT_SEGMENT],
+  dataDe: periodoInicial.dataDe,
+  dataAte: periodoInicial.dataAte,
+  hiddenEmpresas: [],
+});
+
+// Estado do Tooltip
+const tooltip = reactive({
+  show: false,
+  x: 0,
+  y: 0,
+  empresa: '',
+  mes: '',
+  volume: 0,
+  share: 0,
+  cor: ''
+});
+
+const monthValueDe = computed(() => state.dataDe?.substring(0, 7) || '');
+const monthValueAte = computed(() => state.dataAte?.substring(0, 7) || '');
+
+// Função para atualizar o estado adicionando o dia 01 novamente
+function updateDateFromMonthInput(type, val) {
+  if (!val) return;
+  const dateStr = `${val}-01`; // Transforma "2025-07" em "2025-07-01"
+  if (type === 'de') state.dataDe = dateStr; 
+  else state.dataAte = dateStr;
+}
+
+
+// --- LÓGICA DO NOVO CALENDÁRIO ---
+const showPickerDe = ref(false);
+const showPickerAte = ref(false);
+const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+// Estados para navegação de ano dentro do modal
+const viewYearDe = ref(new Date(state.dataDe).getFullYear());
+const viewYearAte = ref(new Date(state.dataAte).getFullYear());
+
+function selectMonth(type, year, monthIndex) {
+  const monthStr = String(monthIndex + 1).padStart(2, '0');
+  const val = `${year}-${monthStr}`;
+  updateDateFromMonthInput(type, val);
+  if (type === 'de') showPickerDe.value = false;
+  else showPickerAte.value = false;
+}
+
+// Fechar ao clicar fora
+onMounted(() => {
+  window.addEventListener('click', (e) => {
+    if (!e.target.closest('.custom-date-picker')) {
+      showPickerDe.value = false;
+      showPickerAte.value = false;
+    }
+  });
+});
+
+const marcasConfig = {
+  TOTALENERGIES: { cor: '#8C6239', logo: 'totalenergies' },
+  YPF: { cor: '#63666A', logo: 'ypf' },
+  VIBRA: { cor: '#004415', logo: 'vibra' },
+  PETRONAS: { cor: '#00A79D', logo: 'petronas' },
+  CASTROL: { cor: '#E10600', logo: 'castrol' },
+  VALVOLINE: { cor: '#2FA4E7', logo: 'valvoline' },
+  'RAIZEN LUBRIFICANTES': { cor: '#9B1BB3', logo: 'raizen' },
+  RAIZEN: { cor: '#9B1BB3', logo: 'raizen' },
+  MOOVE: { cor: '#00A3E0', logo: 'moove' },
+  LWART: { cor: '#000000', logo: 'lwart' },
+  ICONIC: { cor: '#F56600', logo: 'iconic' },
 };
 
-// --- CONFIGURAÇÃO DO GRÁFICO ---
-const larguraSVG = 1000;
-const alturaSVG = 400; 
-const paddingTop = 40;    // Espaço no topo para não cortar a linha de 100M
-const paddingBottom = 70; // Espaço na base para o "0" e os meses
-const paddingLeft = 110;  // Espaço para os números 100.000.000,00
-const paddingRight = 30;
+// --- COMPUTEDS DE KPIs (Grade 2x2) ---
+const kpiMercadoPeriodo = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.mercado);
+const kpiEmpresaPeriodo = computed(() => dashboardData.value?.cardsCalculados?.periodoSelecionado?.empresa);
+const projecaoDados = computed(() => dashboardData.value?.cardsCalculados?.projecao);
 
-const maxYData = 50; // O topo (100M)
+const kpiMercadoProjecao = computed(() => {
+  const p = projecaoDados.value?.mercado;
+  if (!p) return null;
 
-const mesesFiltrados = computed(() => mesesLista.slice(mesInicio.value, parseInt(mesFim.value) + 1));
+  // Extraímos os anos diretamente das strings "YYYY-MM-DD" para evitar erros de fuso horário
+  const anoDe = state.dataDe ? parseInt(state.dataDe.split('-')[0]) : 0;
+  const anoAte = state.dataAte ? parseInt(state.dataAte.split('-')[0]) : 0;
 
-const getX = (indexRelativo) => {
-  const qtd = mesesFiltrados.value.length;
-  const areaUtilX = larguraSVG - paddingLeft - paddingRight;
-  return paddingLeft + (indexRelativo * areaUtilX / (qtd - 1));
-};
+  // LÓGICA: Se qualquer uma das pontas do filtro for 2025, mostra 0.
+  // Se ambas as pontas forem 2026 (ou maior), permite mostrar o cálculo.
+  const contem2025 = (anoDe === 2025 || anoAte === 2025);
 
-const getY = (val) => {
-  const areaUtilY = alturaSVG - paddingTop - paddingBottom;
-  // O valor "0" ficará exatamente na linha do paddingBottom
-  return (alturaSVG - paddingBottom) - (val / maxYData * areaUtilY);
-};
-
-const gerarPontos = (nome) => {
-  const valores = dadosVendasOriginal[nome].slice(mesInicio.value, parseInt(mesFim.value) + 1);
-  return valores.map((v, i) => `${getX(i)},${getY(v)}`).join(' ');
-};
-
-const toggleMarca = (nome) => {
-  if (marcasAtivas.value.includes(nome)) {
-    marcasAtivas.value = marcasAtivas.value.filter(m => m !== nome);
-  } else {
-    marcasAtivas.value.push(nome);
+  if (contem2025) {
+    return {
+      titulo: 'Análise Mercado - Projeção',
+      valor: 0,
+      comparativo: 0,
+      variacaoPercentual: 0
+    };
   }
-};
 
-const KpiIcon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 18H5V12H3V18ZM7 18H9V8H7V18ZM11 18H13V14H11V18ZM15 18H17V10H15V18ZM19 18H21V6H19V18Z" fill="#F58220" fill-opacity="0.3"/><path d="M3 15L8 10L12 14L21 5M21 5H16M21 5V10" stroke="#F58220" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  // Se não contém 2025, realiza o cálculo normalmente
+  return {
+    titulo: 'Análise Mercado - Projeção',
+    valor: p.valorProjetado,
+    comparativo: p.comparativoAnoAnteriorProjetado,
+    variacaoPercentual: p.comparativoAnoAnteriorProjetado > 0 
+      ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 
+      : 0
+  };
+});
 
-const kpis = [
-    { label: 'ANÁLISE MERCADO - ANUAL', val: '1.230.987 m³', sub: '1.216.760 m³', perc: '1,17%' },
-    { label: 'ANÁLISE MERCADO - MENSAL', val: '1.230.987 m³', sub: '1.216.760 m³', perc: '1,17%' },
-    { label: 'ANÁLISE MERCADO - PROJEÇÃO', val: '1.230.987 m³', sub: '1.216.760 m³', perc: '1,17%' },
-    { label: 'ANÁLISE TOTALENERGIES - ANUAL', val: '16.617 m³', sub: '15.826 m³', perc: '5,00%' },
-    { label: 'ANÁLISE TOTALENERGIES - MENSAL', val: '16.617 m³', sub: '15.826 m³', perc: '5,00%' },
-    { label: 'ANÁLISE TOTALENERGIES - PROJEÇÃO', val: '16.617 m³', sub: '15.826 m³', perc: '5,00%' },
-];
+// const kpiEmpresaProjecao = computed(() => {
+//   const p = projecaoDados.value?.empresa;
+//   if (!p) return null;
+//   return {
+//     titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+//     valor: p.valorProjetado,
+//     comparativo: p.comparativoAnoAnteriorProjetado,
+//     variacao: p.comparativoAnoAnteriorProjetado > 0 ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 : 0
+//   };
+// });
 
-const vendaAnualData = [
-    {y:'2017', v:'21.435', n:21435}, {y:'2018', v:'', n:21435}, {y:'2019', v:'19.275', n:19275}, 
-    {y:'2020', v:'16.946', n:16946}, {y:'2021', v:'22.097', n:22097}, {y:'2022', v:'18.245', n:18245}, 
-    {y:'2023', v:'15.133', n:15133}, {y:'2024', v:'', n:14000}, {y:'2025', v:'16.617', n:16617}, {y:'2026', v:'2.944', n:4000}
-];
+const kpiEmpresaProjecao = computed(() => {
+  const p = projecaoDados.value?.empresa;
+  if (!p) return null;
+
+  // Extraímos os anos para validação
+  const anoDe = state.dataDe ? parseInt(state.dataDe.split('-')[0]) : 0;
+  const anoAte = state.dataAte ? parseInt(state.dataAte.split('-')[0]) : 0;
+  const contem2025 = (anoDe === 2025 || anoAte === 2025);
+
+  if (contem2025) {
+    return {
+      titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+      valor: 0,
+      comparativo: 0,
+      variacao: 0
+    };
+  }
+
+  return {
+    titulo: `Análise ${selectedEmpresaLabel.value} - Projeção`,
+    valor: p.valorProjetado,
+    comparativo: p.comparativoAnoAnteriorProjetado,
+    variacao: p.comparativoAnoAnteriorProjetado > 0 
+      ? ((p.valorProjetado / p.comparativoAnoAnteriorProjetado) - 1) * 100 
+      : 0
+  };
+});
+
+const availableEmpresas = computed(() => {
+  const list = dashboardData.value?.filtros?.empresas || [];
+  return list.filter(e => e !== 'IPIRANGA' && e !== 'CHEVRON');
+});
+const availableSegmentos = computed(() => dashboardData.value?.filtros?.segmentos || []);
+const selectedEmpresaLabel = computed(() => (
+  state.empresaSelecionada === ALL_BRANDS_VALUE ? 'Todas as marcas' : state.empresaSelecionada
+));
+
+// --- GRÁFICO ANUAL (Linha conectada ao topo da barra) ---
+const annualChartMetrics = computed(() => {
+  const comp = dashboardData.value?.graficoAnualComparativo;
+  if (!comp?.barrasMercadoTotal) return null;
+
+  const chartWidth = 600;
+  const chartHeight = 180;
+  const paddingBottom = 25;
+  const paddingTop = 30;
+  const usableHeight = chartHeight - paddingTop - paddingBottom;
+  const baseLineY = chartHeight - paddingBottom;
+  
+  const maxVal = Math.max(...comp.barrasMercadoTotal.map(i => i.valor), 1);
+  const gap = chartWidth / comp.barrasMercadoTotal.length;
+  const barWidth = 35;
+
+  const data = comp.barrasMercadoTotal.map((item, idx) => {
+    const valorMarca = comp.linhaMarcaSelecionada?.find(l => l.ano === item.ano)?.valor || 0;
+    const sharePercent = item.valor > 0 ? (valorMarca / item.valor) * 100 : 0;
+    
+    const x = (idx * gap) + (gap / 2);
+    const barTotalHeight = (item.valor / maxVal) * usableHeight;
+    const barMarcaHeight = (valorMarca / maxVal) * usableHeight;
+
+    return {
+      ano: item.ano,
+      valorTotal: item.valor,
+      valorMarca: valorMarca,
+      share: sharePercent,
+      x,
+      barTotalY: baseLineY - barTotalHeight,
+      barTotalHeight,
+      barMarcaY: baseLineY - barMarcaHeight,
+      barMarcaHeight
+    };
+  });
+
+  return { data, barWidth, chartWidth, chartHeight, baseLineY };
+});
+
+// --- GRÁFICO MENSAL (Com volumes para o Tooltip) ---
+const chartMetrics = computed(() => {
+  const mensal = dashboardData.value?.graficoMensalComparativo;
+  const original = dashboardData.value?.graficos?.vendasPorMes;
+  if (!mensal || !original) return null;
+
+  const meses = original.meses || [];
+  const marketVolumes = mensal.barrasMercadoTotal.map(v => Number(v.valor || 0));
+  
+  let lastValidIndex = -1;
+  for (let i = marketVolumes.length - 1; i >= 0; i--) {
+    if (marketVolumes[i] > 0) { lastValidIndex = i; break; }
+  }
+
+  const baseStartX = 84;
+  const chartWidth = 850;
+  const chartBottom = 415;
+  const chartHeight = 360;
+  
+  let gap = meses.length > 1 ? chartWidth / (meses.length - 1) : 0;
+  let startX = baseStartX;
+  if (gap > 150 && meses.length > 1) {
+    gap = 150;
+    startX = baseStartX + (chartWidth - (gap * (meses.length - 1))) / 2;
+  }
+
+  const bars = marketVolumes.map((volume, index) => ({
+    x: startX + (gap * index) - 18,
+    y: getShareY(volume / 500, chartBottom, chartHeight),
+    height: chartBottom - getShareY(volume / 500, chartBottom, chartHeight),
+    width: 36,
+    value: volume
+  }));
+
+  const allLines = mensal.linhasShareMarcas
+    .filter(s => !state.hiddenEmpresas.includes(s.empresa))
+    .filter(serie => serie.valores.some(val => val > 0)) 
+    .map((serie) => {
+      const isHighlighted = state.empresaSelecionada === serie.empresa;
+      const volumeSerie = original.seriesVolume?.find(v => v.empresa === serie.empresa);
+      return {
+        empresa: serie.empresa,
+        cor: marcasConfig[serie.empresa]?.cor || '#8c8c8c',
+        isHighlighted,
+        strokeWidth: isHighlighted ? 3.6 : 1.8,
+        strokeOpacity: isHighlighted ? 1 : 0.45,
+        points: serie.valores.slice(0, lastValidIndex + 1).map((val, idx) => ({
+          x: startX + (gap * idx),
+          y: getShareY(val, chartBottom, chartHeight),
+          share: val,
+          volume: volumeSerie ? volumeSerie.valores[idx] : 0,
+        })),
+      };
+    });
+
+  return { meses, bars, allLines, startX, gap, 
+    sidebarShares: (() => {
+  const marcas = dashboardData.value?.graficos?.vendasPorMes?.seriesVolume || [];
+  const mercado = mensal.barrasMercadoTotal.map(v => Number(v.valor || 0));
+
+  return marcas.map(marca => {
+    let share = 0;
+
+    if (mesSelecionadoIndex.value !== null) {
+      // 📌 SHARE DE UM MÊS ESPECÍFICO
+      const i = mesSelecionadoIndex.value;
+      const volumeMarca = marca.valores[i] || 0;
+      const volumeMercado = mercado[i] || 0;
+
+      share = volumeMercado > 0 ? (volumeMarca / volumeMercado) * 100 : 0;
+
+    } else {
+      // 📌 SHARE AGREGADO (TODOS OS MESES)
+      const totalMarca = marca.valores.reduce((acc, v) => acc + (v || 0), 0);
+      const totalMercado = mercado.reduce((acc, v) => acc + (v || 0), 0);
+
+      share = totalMercado > 0 ? (totalMarca / totalMercado) * 100 : 0;
+    }
+
+    return {
+      nome: marca.empresa,
+      share
+    };
+  })
+  .filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON')
+  .sort((a, b) => b.share - a.share);
+})().filter(m => m.nome !== 'IPIRANGA' && m.nome !== 'CHEVRON').sort((a, b) => b.share - a.share),
+    yTicks: SHARE_TICKS.map(tick => ({ value: tick, y: getShareY(tick, chartBottom, chartHeight) }))
+  };
+});
+
+// --- AUXILIARES ---
+function getShareY(share, chartBottom, chartHeight) {
+  const safeShare = Math.max(0, Math.min(450, Number(share || 0)));
+  const levels = [0, ...SHARE_TICKS];
+  for (let i = 0; i < levels.length - 1; i++) {
+    const start = levels[i], end = levels[i+1];
+    if (safeShare <= end || i === levels.length - 2) {
+      const fraction = end > start ? (safeShare - start) / (end - start) : 0;
+      return chartBottom - (((i + fraction) / (levels.length - 1)) * chartHeight);
+    }
+  }
+  return chartBottom;
+}
+
+
+function formatVolume(v) { return `${Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m³`; }
+function formatVolumeCompact(v) { 
+  const n = Number(v || 0);
+  return n >= 1000 ? `${(n/1000).toLocaleString('pt-BR', {maximumFractionDigits:1})} m³` : `${n.toLocaleString('pt-BR')} m³`;
+}
+function formatVolumeAnualMil(v) { return (Number(v || 0) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }); }
+function formatPercent(v) { return `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`; }
+function formatDateDisplay(d) { if (!d) return ''; const [y, m, d_] = d.split('-'); return `${m}/${y}`; }
+
+async function fetchDashboard() {
+  loading.value = true;
+  try {
+    const params = new URLSearchParams();
+    params.append('empresa', state.empresaSelecionada);
+    params.append('dataDe', state.dataDe);
+    params.append('dataAte', state.dataAte);
+    state.segmentos.forEach(s => params.append('segmento', s));
+    const response = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
+    const json = await response.json();
+    if (json.status === 'ok') dashboardData.value = json.data;
+  } catch (e) { console.error(e); } finally { loading.value = false; }
+}
+
+function handleMouseMove(event, empresa, point, mes) {
+  tooltip.show = true;
+  tooltip.x = event.clientX;
+  tooltip.y = event.clientY;
+  tooltip.empresa = empresa;
+  tooltip.mes = mes;
+  tooltip.volume = point.volume;
+  tooltip.share = point.share;
+  tooltip.cor = marcasConfig[empresa]?.cor || '#8c8c8c';
+}
+
+function toggleSegmento(id) {
+  state.segmentos = state.segmentos.includes(id) ? (state.segmentos.length > 1 ? state.segmentos.filter(i => i !== id) : state.segmentos) : [...state.segmentos, id];
+}
+
+function toggleLineVisibility(empresa) {
+  state.hiddenEmpresas = state.hiddenEmpresas.includes(empresa) ? state.hiddenEmpresas.filter(i => i !== empresa) : [...state.hiddenEmpresas, empresa];
+}
+
+function selecionarMes(index) {
+  mesSelecionadoIndex.value = mesSelecionadoIndex.value === index ? null : index;
+}
+
+onMounted(fetchDashboard);
+watch(() => [state.empresaSelecionada, state.dataDe, state.dataAte, state.segmentos], fetchDashboard);
 </script>
 
 <template>
-  <div class="pbi-dashboard">
-    <header class="pbi-header">
-      <div class="f-group"><span>SELECIONE A EMPRESA:</span> <select><option>TOTALENERGIES</option></select></div>
-      <div class="f-group"><span>ANO:</span> <select><option>2025</option></select></div>
-      <div class="f-group"><span>DO MÊS:</span> 
-        <select v-model="mesInicio">
-            <option v-for="(m, i) in mesesLista" :key="i" :value="i">{{ m }}</option>
-        </select>
-      </div>
-      <div class="f-group"><span>ATÉ O MÊS:</span> 
-        <select v-model="mesFim">
-            <option v-for="(m, i) in mesesLista" :key="i" :value="i">{{ m }}</option>
-        </select>
-      </div>
-      <div class="f-group">
-        <span>SEGMENTO:</span>
-        <div class="pbi-tabs"><button>CONSUMIDOR</button><button class="active">REVENDEDOR</button></div>
-      </div>
-      <button class="btn-pbi-red" @click="marcasAtivas = marcas.map(m => m.nome)">Limpar Filtros</button>
-    </header>
-
-    <div class="pbi-content">
-      <div class="top-row">
-        <div class="kpi-grid">
-          <div class="pbi-card kpi-card" v-for="(k, i) in kpis" :key="i">
-            <div class="kpi-inner">
-              <div class="kpi-icon" v-html="KpiIcon"></div>
-              <div class="kpi-text">
-                <div class="kpi-label">{{ k.label }}</div>
-                <div class="kpi-val">{{ k.val }}</div>
-                <div class="kpi-sub">
-                  <span>{{ k.sub }}</span>
-                  <span class="pbi-dot">●</span>
-                  <span class="pbi-perc">{{ k.perc }}</span>
+  <div class="pbi-layout" v-if="dashboardData">
+    <header class="pbi-filters">
+      <div class="filter-left">
+        <div class="filter-block">
+          <label>Selecione sua marca</label>
+          <select v-model="state.empresaSelecionada" class="select-control">
+            <option :value="ALL_BRANDS_VALUE">Todas as marcas</option>
+            <option v-for="empresa in availableEmpresas" :key="empresa" :value="empresa">{{ empresa }}</option>
+          </select>
+        </div>
+        <div class="filter-block">
+          <label>Segmento</label>
+          <div class="segment-picker">
+            <label v-for="segmento in availableSegmentos" :key="segmento.id" class="segment-option">
+              <input type="checkbox" :checked="state.segmentos.includes(segmento.id)" @change="toggleSegmento(segmento.id)" />
+              <span>&nbsp;{{ segmento.label }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="filter-block">
+          <label>Período</label>
+          <div class="period-picker">
+            <!-- Campo DE -->
+            <div class="custom-date-picker">
+              <span class="date-label">De</span>
+              <div class="picker-input" @click.stop="showPickerDe = !showPickerDe; showPickerAte = false">
+                <i class="calendar-icon">📅</i>
+                <span>{{ formatDateDisplay(state.dataDe) }}</span>
+              </div>
+              
+              <div v-if="showPickerDe" class="month-selector-modal">
+                <div class="modal-header">
+                  <button @click.stop="viewYearDe--">«</button>
+                  <span class="year-display">{{ viewYearDe }}</span>
+                  <button @click.stop="viewYearDe++">»</button>
+                </div>
+                <div class="month-grid">
+                  <button 
+                    v-for="(m, idx) in months" 
+                    :key="m" 
+                    class="month-btn"
+                    :class="{ active: monthValueDe === `${viewYearDe}-${String(idx+1).padStart(2, '0')}` }"
+                    @click.stop="selectMonth('de', viewYearDe, idx)"
+                  >
+                    {{ m }}
+                  </button>
                 </div>
               </div>
-              <div class="kpi-icon mirror" v-html="KpiIcon"></div>
             </div>
-          </div>
-        </div>
 
-        <div class="pbi-card side-chart">
-          <div class="chart-header">VENDA ANUAL</div>
-          <div class="venda-anual-bars">
-            <div v-for="(v, i) in vendaAnualData" :key="i" class="va-col">
-              <span class="va-txt">{{ v.v }}</span>
-              <div class="va-bar" :class="{ 'last-bar': i === 9 }" :style="{ height: (v.n / 25000 * 100) + '%' }"></div>
-              <span class="va-year">{{ v.y }}</span>
-            </div>
-          </div>
-        </div>
+            <div class="date-separator"></div>
 
-        <div class="pbi-card side-chart">
-          <div class="chart-header text-center">Vendas de Lubrificantes por Segmento</div>
-          <div class="seg-viz">
-            <div class="seg-bar-group">
-              <span class="va-txt">15.239</span>
-              <div class="va-bar" style="height: 120px; width: 45px; background: #084594;"></div>
-              <span class="va-year font-bold">REVENDEDOR</span>
-            </div>
-            <div class="seg-bar-group">
-              <span class="va-txt">1.378</span>
-              <div class="va-bar" style="height: 20px; width: 45px; background: #41b6c4;"></div>
-              <span class="va-year font-bold">CONSUMIDOR</span>
+            <!-- Campo ATÉ -->
+            <div class="custom-date-picker">
+              <span class="date-label">Até</span>
+              <div class="picker-input" @click.stop="showPickerAte = !showPickerAte; showPickerDe = false">
+                <i class="calendar-icon">📅</i>
+                <span>{{ formatDateDisplay(state.dataAte) }}</span>
+              </div>
+
+              <div v-if="showPickerAte" class="month-selector-modal">
+                <div class="modal-header">
+                  <button @click.stop="viewYearAte--">«</button>
+                  <span class="year-display">{{ viewYearAte }}</span>
+                  <button @click.stop="viewYearAte++">»</button>
+                </div>
+                <div class="month-grid">
+                  <button 
+                    v-for="(m, idx) in months" 
+                    :key="m" 
+                    class="month-btn"
+                    :class="{ active: monthValueAte === `${viewYearAte}-${String(idx+1).padStart(2, '0')}` }"
+                    @click.stop="selectMonth('ate', viewYearAte, idx)"
+                  >
+                    {{ m }}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      <button class="btn-clear" @click="state.empresaSelecionada = ALL_BRANDS_VALUE; fetchDashboard()">Limpar filtros</button>
+    </header>
 
-      <!-- GRÁFICO INFERIOR CORRIGIDO -->
-      <div class="pbi-card main-viz-card">
-        <div class="chart-header-row">
-          <span class="chart-title">Vendas de Lubrificantes por mês</span>
-          <div class="pbi-line-legend">
-            <div v-for="marca in marcas" :key="marca.nome" 
-                 class="leg-item" 
-                 :class="{ 'inactive': !marcasAtivas.includes(marca.nome) }"
-                 @click="toggleMarca(marca.nome)">
-              <img :src="`/logos/lubrificantes/${marca.nome.toLowerCase()}.png`" 
-                   :alt="marca.nome" 
-                   class="brand-logo" />
+    <div class="pbi-content" :class="{ 'loading-opacity': loading }">
+      <section class="top-section">
+        <div class="kpi-grid">
+          <div class="card kpi-card" v-if="kpiMercadoPeriodo">
+            <div class="kpi-label">MERCADO: {{ kpiMercadoPeriodo.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiMercadoPeriodo.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiMercadoPeriodo.comparativo) }}</span><span class="pill" :class="{ neg: kpiMercadoPeriodo.variacaoPercentual < 0 }">{{ formatPercent(kpiMercadoPeriodo.variacaoPercentual) }} YoY</span></div>
+          </div>
+          <div class="card kpi-card" v-if="kpiMercadoProjecao">
+            <div class="kpi-label">{{ kpiMercadoProjecao.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiMercadoProjecao.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiMercadoProjecao.comparativo) }}</span><span class="pill" :class="{ neg: kpiMercadoProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiMercadoProjecao.variacaoPercentual) }} YoY</span></div>
+          </div>
+          <div class="card kpi-card brand-bg" v-if="kpiEmpresaPeriodo">
+            <div class="kpi-label">{{ selectedEmpresaLabel }}: {{ kpiEmpresaPeriodo.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiEmpresaPeriodo.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaPeriodo.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaPeriodo.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaPeriodo.variacaoPercentual) }} YoY</span></div>
+          </div>
+          <div class="card kpi-card brand-bg" v-if="kpiEmpresaProjecao && periodoIncluiAnoAtual">
+            <div class="kpi-label">{{ kpiEmpresaProjecao.titulo }}</div>
+            <div class="kpi-val">{{ formatVolume(kpiEmpresaProjecao.valor) }}</div>
+            <div class="kpi-footer"><span class="sub">{{ formatVolume(kpiEmpresaProjecao.comparativo) }}</span><span class="pill" :class="{ neg: kpiEmpresaProjecao.variacaoPercentual < 0 }">{{ formatPercent(kpiEmpresaProjecao.variacaoPercentual) }} YoY</span></div>
+          </div>
+        </div>
+
+        <!-- GRÁFICO ANUAL -->
+        <div class="card chart-annual-expanded">
+          <div class="card-title">Vendas Anual (m³): Mercado vs {{ selectedEmpresaLabel }}</div>
+          <div class="annual-svg-container" v-if="annualChartMetrics">
+            <svg viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet">
+              <g v-for="item in annualChartMetrics.data" :key="item.ano">
+                <rect :x="item.x - annualChartMetrics.barWidth/2" :y="item.barTotalY" :width="annualChartMetrics.barWidth" :height="item.barTotalHeight" fill="#cbd5e1" rx="2" />
+                <rect v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.valorMarca > 0" :x="item.x - annualChartMetrics.barWidth/2" :y="item.barMarcaY" :width="annualChartMetrics.barWidth" :height="item.barMarcaHeight" :fill="marcasConfig[state.empresaSelecionada]?.cor" rx="2" />
+                <text :x="item.x" :y="item.barTotalY - 8" text-anchor="middle" class="svg-annual-vol">
+                  {{ formatVolume(item.valorTotal).replace(' m³', '') }}
+                </text>
+                <text 
+                  v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE && item.share > 0" 
+                  :x="item.x" 
+                  :y="item.barMarcaY - 12" 
+                  text-anchor="middle" 
+                  class="svg-annual-share" 
+                  :fill="marcasConfig[state.empresaSelecionada]?.cor"
+                  style="font-weight: 800; font-size: 11px;"
+                >
+                  {{ formatPercent(item.share) }}
+                </text>
+                <text :x="item.x" :y="175" text-anchor="middle" class="svg-annual-year">{{ item.ano }}</text>
+              </g>
+              <polyline v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" fill="none" :stroke="marcasConfig[state.empresaSelecionada]?.cor" stroke-width="2.5" stroke-linecap="round" :points="annualChartMetrics.data.filter(d => d.valorMarca > 0).map(d => `${d.x},${d.barMarcaY}`).join(' ')" />
+              <circle v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" v-for="item in annualChartMetrics.data.filter(d => d.valorMarca > 0)" :key="'c-'+item.ano" :cx="item.x" :cy="item.barMarcaY" r="4" :fill="marcasConfig[state.empresaSelecionada]?.cor" stroke="white" stroke-width="1.5" />
+            </svg>
+          </div>
+          <div class="annual-legend">
+            <div class="legend-item"><div class="legend-color total"></div><span>Mercado</span></div>
+            <div v-if="state.empresaSelecionada !== ALL_BRANDS_VALUE" class="legend-item"><div class="legend-color marca" :style="{ background: marcasConfig[state.empresaSelecionada]?.cor }"></div><span>{{ state.empresaSelecionada }}</span></div>
+          </div>
+        </div>
+
+        <div class="card chart-segment">
+          <div class="card-title">Vendas por segmento</div>
+          <div class="segment-container">
+            <div v-for="seg in dashboardData.graficos.segmento.items" :key="seg.id" class="seg-col">
+              <span class="bar-txt">{{ formatVolumeCompact(seg.valor) }}</span>
+              <div class="seg-bar" :style="{ background: seg.cor, height: '70%' }"></div>
+              <span class="bar-label bold">{{ seg.label }}</span>
             </div>
           </div>
         </div>
-        
-        <div class="main-viz-wrapper">
-          <svg class="svg-line-chart" :viewBox="`0 0 ${larguraSVG} ${alturaSVG}`" preserveAspectRatio="xMidYMid meet">
-            <!-- LINHAS DE GRADE (Y) -->
-            <line v-for="n in 6" :key="'grid'+n" 
-              :x1="paddingLeft" :y1="getY((n-1)*10)" :x2="larguraSVG - paddingRight" :y2="getY((n-1)*10)" 
-              stroke="#eeeeee" stroke-width="1" />
-            
-            <!-- LABELS DO EIXO Y (Garante o 0 até 100M) -->
-            <text v-for="n in 6" :key="'labelY'+n" 
-              :x="paddingLeft - 15" :y="getY((n-1)*10) + 4" 
-              text-anchor="end" class="svg-label">
-              {{ ((n-1)*20000000).toLocaleString('pt-BR') }},00
-            </text>
+      </section>
 
-            <!-- AS LINHAS DOS DADOS -->
-            <g v-for="marca in marcas" :key="'linegroup'+marca.nome">
-              <g v-if="marcasAtivas.includes(marca.nome)">
-                <polyline :points="gerarPontos(marca.nome)" fill="none" :stroke="marca.cor" stroke-width="3" stroke-linejoin="round" />
-                <circle v-for="(val, idx) in dadosVendasOriginal[marca.nome].slice(mesInicio, parseInt(mesFim) + 1)" :key="'dot'+idx"
-                  :cx="getX(idx)" :cy="getY(val)" r="4.5" :fill="marca.cor" stroke="white" stroke-width="1.5" />
-              </g>
-            </g>
-
-            <!-- MESES (EIXO X) -->
-            <text v-for="(mes, i) in mesesFiltrados" :key="'labelX'+mes" 
-              :x="getX(i)" :y="alturaSVG - 25" 
-              text-anchor="middle" class="svg-label-x">
-              {{ mes }}
-            </text>
-          </svg>
+      <!-- GRÁFICO MENSAL COM HOVER -->
+      <section class="card main-viz">
+        <div class="viz-header">
+          <div class="viz-info"><h3>Vendas de Lubrificantes por Mês (m³)</h3><p class="viz-note">* Barras cinza = Mercado | Linhas = % Share</p></div>
         </div>
+        <div class="viz-legend">
+          <button v-for="empresa in availableEmpresas" :key="empresa" class="leg-item" :class="{ active: state.empresaSelecionada === empresa, hidden: state.hiddenEmpresas.includes(empresa) }" @click="toggleLineVisibility(empresa)">
+            <span class="dot" :style="{ background: marcasConfig[empresa]?.cor || '#8c8c8c' }"></span><span>{{ empresa }}</span>
+          </button>
+        </div>
+        <div class="viz-body">
+          <div class="svg-area">
+            <svg viewBox="0 0 1000 450" preserveAspectRatio="none">
+              <g v-for="(bar, index) in chartMetrics?.bars" :key="index">
+                <rect 
+                  v-if="bar.value > 0"
+                  :x="bar.x" 
+                  :y="bar.y" 
+                  :width="bar.width" 
+                  :height="bar.height" 
+                  fill="#cbd5e1" 
+                  rx="4" 
+                  :opacity="mesSelecionadoIndex === index ? 0.8 : 0.35"
+                  @click="selecionarMes(index)"
+                  style="cursor: pointer"
+                />
+                <text v-if="bar.value > 0" :x="bar.x + bar.width/2" :y="bar.y - 10" text-anchor="middle" class="svg-txt-axis">
+                  {{ formatVolume(bar.value).replace(' m³', '') }}
+                </text>
+              </g>
+              <g v-for="tick in chartMetrics?.yTicks" :key="tick.value">
+                <text v-if="tick.value <= 30" x="44" :y="tick.y + 4" text-anchor="end" class="svg-txt-axis">{{ tick.value }}%</text>
+                <line v-if="tick.value <= 30 || tick.value === 100" x1="56" :y1="tick.y" x2="950" :y2="tick.y" stroke="#e2e8f0" stroke-dasharray="4" />
+              </g>
+              <g v-for="line in chartMetrics?.allLines" :key="line.empresa">
+                <polyline :points="line.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" :stroke="line.cor" :stroke-width="line.strokeWidth" :stroke-opacity="line.strokeOpacity" />
+                <circle v-for="(p, idx) in line.points" :key="idx" :cx="p.x" :cy="p.y" :r="line.isHighlighted ? 6 : 4.5" :fill="line.cor" stroke="white" stroke-width="1.5" class="chart-point" @mousemove="handleMouseMove($event, line.empresa, p, chartMetrics.meses[idx])" @mouseleave="tooltip.show = false" />
+              </g>
+              <text v-for="(mes, i) in chartMetrics?.meses" :key="mes" :x="(chartMetrics?.startX || 84) + ((chartMetrics?.gap || 0) * i)" y="430" text-anchor="middle" class="svg-txt">{{ mes }}</text>
+            </svg>
+          </div>
+          <aside class="sidebar">
+            <div class="side-title">% Share Mercado</div>
+            <div v-for="marca in chartMetrics?.sidebarShares" :key="marca.nome" class="side-item">
+              <img :src="`/logos/lubrificantes/${marcasConfig[marca.nome]?.logo || 'generic'}.png`" class="brand-logo-img" />
+              <span class="name" :class="{ 'bold-txt': state.empresaSelecionada === marca.nome }">{{ marca.nome }}</span>
+              <span class="badge" :class="{ orange: state.empresaSelecionada === marca.nome }">{{ formatPercent(marca.share) }}</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+
+    <!-- TOOLTIP REATIVO -->
+    <div v-if="tooltip.show" class="custom-tooltip" :style="{ top: (tooltip.y - 100) + 'px', left: (tooltip.x + 15) + 'px' }">
+      <div class="tooltip-header" :style="{ borderLeftColor: tooltip.cor }">
+        <strong>{{ tooltip.empresa }}</strong><span>{{ tooltip.mes }}</span>
+      </div>
+      <div class="tooltip-body">
+        <div class="tooltip-row"><span>Volume:</span> <b>{{ formatVolume(tooltip.volume) }}</b></div>
+        <div class="tooltip-row"><span>Share:</span> <b>{{ formatPercent(tooltip.share) }}</b></div>
       </div>
     </div>
-    
   </div>
 </template>
 
 <style scoped>
-.pbi-dashboard { background-color: #f3f3f3; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+.pbi-layout { background: #f3f3f3; min-height: 100vh; padding: 15px; font-family: 'Segoe UI', sans-serif; }
+.pbi-content { display: flex; flex-direction: column; gap: 15px; min-width: 1200px; }
+.loading-opacity { opacity: 0.5; pointer-events: none; }
+.pbi-filters { display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px 20px; border-radius: 8px; margin-bottom: 10px; }
+.filter-left { display: flex; align-items: flex-end; gap: 16px; }
+.filter-block label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 4px; display: block; }
+.select-control { min-width: 200px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; font-size: 12px; }
+.segment-picker { display: flex; gap: 8px; }
 
-/* Header e Filtros */
-.pbi-header { background: white; padding: 10px 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; font-size: 11px; font-weight: bold; border-bottom: 1px solid #ddd; }
-.f-group { display: flex; align-items: center; gap: 6px; }
-.f-group select { border: 1px solid #ccc; padding: 2px 5px; border-radius: 2px; }
-.pbi-tabs { border: 1px solid #ccc; border-radius: 2px; display: flex; }
-.pbi-tabs button { border: none; background: white; padding: 2px 10px; font-size: 10px; cursor: pointer; color: #777; }
-.pbi-tabs button.active { background: #eee; color: #000; font-weight: bold; }
-.btn-pbi-red { background: #ff4d4d; color: white; border: none; padding: 6px 15px; border-radius: 6px; font-weight: bold; margin-left: auto; cursor: pointer; }
+.segment-option { 
+  display: inline-flex; 
+  align-items: center; 
+  gap: 14px; 
+  border: 1px solid #d1d5db; 
+  border-radius: 10px; 
+  padding: 4px 12px; 
+  font-size: 11px; 
+  background: #fafafa; 
+  cursor: pointer; 
+  }
 
-/* Layout Geral */
-.pbi-content { flex: 1; padding: 15px; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
-.top-row { display: grid; grid-template-columns: 3fr 1fr 1fr; gap: 15px; height: 30%; min-height: 200px; }
-.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 12px; }
+/* --- NOVO ESTILO CALENDÁRIO --- */
+.period-picker { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px;
+}
 
-.pbi-card { background: white; border-radius: 12px; border: 1px solid #e5e5e5; box-shadow: 0 2px 5px rgba(0,0,0,0.03); overflow: hidden; }
+.custom-date-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 
-/* KPIs */
-.kpi-card { padding: 10px; }
-.kpi-inner { display: flex; justify-content: space-between; align-items: center; height: 100%; }
-.kpi-label { font-size: 9px; font-weight: 800; color: #444; text-transform: uppercase; }
-.kpi-val { font-size: 20px; font-weight: 800; color: #000; margin: 2px 0; }
-.kpi-sub { font-size: 10px; display: flex; align-items: center; gap: 4px; color: #666; font-weight: 600; }
-.pbi-dot { color: #228b22; }
-.pbi-perc { color: #228b22; }
-.kpi-icon.mirror { opacity: 0.05; transform: scaleX(-1); }
+.date-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
 
-/* Venda Anual */
-.side-chart { padding: 12px; display: flex; flex-direction: column; }
-.chart-header { font-size: 11px; font-weight: bold; color: #444; margin-bottom: 8px; }
-.venda-anual-bars { flex: 1; display: flex; align-items: flex-end; justify-content: space-between; padding: 5px; }
-.va-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
-.va-bar { background-color: #f58220; width: 60%; border-radius: 2px; min-width: 6px; }
-.va-txt { font-size: 8px; font-weight: bold; margin-bottom: 2px; }
-.va-year { font-size: 9px; color: #999; margin-top: 4px; }
-.seg-viz { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; }
+.picker-input {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 130px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1e293b;
+  font-weight: 600;
+  transition: all 0.2s;
+}
 
-/* O GRÁFICO PRINCIPAL */
-.main-viz-card { flex: 1; display: flex; flex-direction: column; padding: 20px; }
-.chart-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.chart-title { font-size: 16px; font-weight: bold; color: #333; }
+.picker-input:hover {
+  border-color: #f58220;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
 
-.pbi-line-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; max-width: 75%; }
-.leg-item { cursor: pointer; transition: 0.2s; }
-.leg-item.inactive { opacity: 0.15; filter: grayscale(1); }
-.brand-logo { height: 64px; width: auto; object-fit: contain; }
+.calendar-icon {
+  font-size: 14px;
+  opacity: 0.6;
+}
 
-.main-viz-wrapper { flex: 1; position: relative; width: 100%; overflow: hidden; }
-.svg-line-chart { width: 100%; height: 100%; display: block; }
+.date-separator {
+  width: 12px;
+  height: 2px;
+  background: #cbd5e1;
+  margin-top: 18px;
+}
 
-.svg-label { font-size: 10px; fill: #888; font-weight: bold; }
-.svg-label-x { font-size: 12px; fill: #444; font-weight: 800; }
+/* Modal do Seletor */
+.month-selector-modal {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+  padding: 15px;
+  margin-top: 8px;
+  width: 240px;
+}
 
-.pbi-footer { text-align: center; padding: 10px; font-size: 11px; color: #777; background: white; border-top: 1px solid #eee; }
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
 
-.font-bold { font-weight: bold; }
-.text-center { text-align: center; }
+.modal-header button {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-header button:hover {
+  background: #f58220;
+  color: white;
+  border-color: #f58220;
+}
+
+.year-display {
+  font-weight: 800;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.month-btn {
+  padding: 10px 5px;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.month-btn:hover {
+  background: #f1f5f9;
+  color: #f58220;
+  border-color: #f58220;
+}
+
+.month-btn.active {
+  background: #f58220;
+  color: white;
+  font-weight: 700;
+}
+
+.date-field { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  font-size: 11px; 
+  color: #64748b;
+  font-weight: 600;
+}
+
+.date-field input { 
+  border: 1px solid #e2e8f0; 
+  border-radius: 6px; 
+  padding: 5px 8px; 
+  font-size: 12px; 
+  color: #1e293b;
+  cursor: pointer;
+  background: white;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.date-field input:hover {
+  border-color: #f58220;
+}
+
+/* Customização do ícone do calendário para alguns browsers */
+.date-field input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(48%) sepia(13%) stroke(1px, #f58220); /* Opcional: muda a cor do ícone */
+}
+.btn-clear { background: white; border: 1px solid #333; padding: 8px 15px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 11px; }
+
+.top-section { display: grid; grid-template-columns: 3.5fr 3fr 1fr; gap: 15px; }
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
+.card { 
+  background: white; 
+  border-radius: 10px; 
+  border: 1px solid #e0e0e0; 
+  padding: 12px; /* Aumentei de 15px para 22px para dar mais corpo */
+  display: flex; 
+  flex-direction: column;
+  min-height: 130px; /* Adicione uma altura mínima se quiser que sejam mais altos */
+}
+.brand-bg { background: #fff6ed !important; }
+
+.kpi-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; }
+.kpi-val { font-size: 20px; font-weight: 800; margin: 8px 0; color: #1e293b; }
+.kpi-footer { display: flex; justify-content: space-between; align-items: center; }
+.sub { font-size: 10px; color: #94a3b8; }
+.pill { background: #e6f7ed; color: #008a3e; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.pill.neg { background: #fee2e2; color: #dc2626; }
+
+.chart-annual-expanded { min-height: 210px; align-self: stretch; }
+.annual-svg-container { height: 180px; margin-top: 10px; }
+.svg-annual-vol { font-size: 10px; font-weight: 700; fill: #475569; }
+.svg-annual-year { font-size: 11px; fill: #64748b; font-weight: 600; }
+.svg-annual-share { font-size: 10px; font-weight: 800; }
+.annual-legend { display: flex; gap: 15px; margin-top: 10px; justify-content: center; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: #64748b; }
+.legend-color { width: 12px; height: 12px; border-radius: 2px; }
+.legend-color.total { background: #cbd5e1; }
+.legend-color.marca { border-radius: 2px; }
+
+.segment-container { display: flex; align-items: flex-end; justify-content: space-around; flex: 1; margin-top: 10px; }
+.seg-col { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+.seg-bar { width: 30px; border-radius: 4px 4px 0 0; }
+.bar-txt { font-size: 10px; font-weight: 700; margin-bottom: 5px; }
+.bar-label { font-size: 11px; margin-top: 5px; color: #64748b; }
+
+.main-viz { min-height: 600px; margin-top: 15px; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0; }
+.leg-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid #e5e7eb; border-radius: 20px; background: white; cursor: pointer; font-size: 11px; }
+.leg-item.active { border-color: #f58220; color: #f58220; font-weight: 700; }
+.leg-item.hidden { opacity: 0.4; text-decoration: line-through; }
+.dot { width: 10px; height: 3px; border-radius: 2px; }
+.viz-body { display: flex; gap: 20px; flex: 1; }
+.svg-area { flex: 1; }
+
+.sidebar { 
+  width: 220px; 
+  border-left: 1px solid #eee; 
+  padding-left: 15px; 
+}
+
+.side-item { 
+  display: flex; 
+  align-items: center; 
+  padding: 2px;
+  gap: 10px; 
+  margin-bottom: 8px;
+  margin-top: 8px;
+  width: 100%; /* Garante que use todo o espaço da sidebar */
+}
+
+.brand-logo-img { 
+  width: 18px; 
+  height: 18px; 
+  object-fit: contain; 
+}
+
+.name {
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.name.bold-txt {
+  font-weight: 700;
+}
+
+/* ESTA É A MUDANÇA PRINCIPAL */
+.badge { 
+  background: #f1f5f9; /* Fundo cinza claro para todas as marcas */
+  color: #475569; 
+  border-radius: 4px; 
+  padding: 2px 6px; 
+  font-size: 12px; 
+  font-weight: 700;
+  margin-left: auto; /* Empurra o badge para a extrema direita */
+}
+
+/* Quando a marca estiver selecionada, sobrepõe com a cor laranja */
+.badge.orange { 
+  background: #f58220; 
+  color: white; 
+  font-size: 12px;
+}
+
+
+.svg-txt-axis { font-size: 10px; fill: #94a3b8; font-weight: 700; }
+.svg-txt { font-size: 11px; fill: #94a3b8; }
+
+/* ESTILOS DO TOOLTIP */
+.chart-point { cursor: pointer; transition: r 0.2s ease; }
+.chart-point:hover { r: 8 !important; }
+.custom-tooltip { position: fixed; z-index: 9999; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); pointer-events: none; font-size: 12px; min-width: 150px; }
+.tooltip-header { border-left: 4px solid; padding-left: 8px; margin-bottom: 5px; display: flex; flex-direction: column; }
+.tooltip-header strong { font-size: 13px; color: #1e293b; }
+.tooltip-header span { font-size: 11px; color: #64748b; }
+.tooltip-row { display: flex; justify-content: space-between; margin-top: 2px; }
+.tooltip-row span { color: #64748b; }
+.tooltip-row b { color: #1e293b; }
 </style>
