@@ -131,15 +131,29 @@ const handleChartClick = (event, elements, chartKey) => {
 };
 
 const openDetailedModal = async (type) => {
-    modalTitle.value = `Top 10 ${type} (Consolidado)`;
-    modalChartType.value = 'pie'; showModal.value = true; isModalLoading.value = true;
+    // Ajuste no título para refletir que os filtros estão ativos
+    modalTitle.value = `Top 10 ${type} (Filtrado)`;
+    modalChartType.value = 'pie'; 
+    showModal.value = true; 
+    isModalLoading.value = true;
+
     try {
-        const res = await api.get(type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos', { 
-            params: { estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, tipoVeiculo: 'Todos', jaso: 'Todos' } 
-        });
-        // ALTERADO: Ordenando por .frota em vez de .litros
+        // Agora incluímos o estado atual de todos os filtros selecionados
+        const params = { 
+            estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, 
+            ...filters 
+        };
+        
+        const endpoint = type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos';
+        const res = await api.get(endpoint, { params });
+        
+        // Ordenação por frota e limite de 10 resultados
         modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
-    } catch (e) { console.error(e); } finally { isModalLoading.value = false; }
+    } catch (e) { 
+        console.error("Erro ao carregar dados do modal:", e); 
+    } finally { 
+        isModalLoading.value = false; 
+    }
 };
 
 const openStatesModal = () => { modalTitle.value = 'Volume por Estado (Completo)'; modalChartType.value = 'bar'; showModal.value = true; modalData.value = true; };
