@@ -218,7 +218,7 @@ const getLogo = (nome) => {
       <!-- SIDEBAR NEWS -->
       <aside class="lubx-news">
         <div class="news-header">
-          <img src="/logos/lubx-white.png" alt="LUBX" class="news-logo" />
+          <img src="/Lubx_White.png" alt="LUBX" class="news-logo" />
           <span>News Mercado Automotivo</span>
         </div>
         <div class="news-card-dark">
