@@ -8,9 +8,9 @@ import Acesso from '../views/cadastros/Acesso.vue';
 import Similaridade from '../views/cadastros/Similaridade.vue';  
 import Frotas from '../views/dashboards/Frotas.vue';  
 import Marcas from '../views/dashboards/Marcas.vue';  
-import Ibp from '../views/dashboards/Ibp.vue';  
-import Ibp2 from '../views/dashboards/Ibp2.vue';   
-import Anp from '../views/dashboards/Anp.vue';  
+import Ibp from '../views/dashboards/Ibp.vue';
+import Ibp2 from '../views/dashboards/Ibp2.vue';
+import Anp from '../views/dashboards/Anp.vue';
 import Oportunidades from '../views/dashboards/Oportunidades.vue';  
 import Oportunit from '../views/dashboards/Oportunit.vue';  
 import Cnae from '../views/dashboards/Cnae.vue';  
@@ -83,12 +83,12 @@ const router = createRouter({
       component: Ibp2, 
       meta: { requiresLayout: true } 
     },  
-    { 
-      path: '/dashboards/anp', 
-      name: 'anp', 
-      component: Anp, 
+    {
+      path: '/dashboards/anp',
+      name: 'anp',
+      component: Anp,
       meta: { requiresLayout: true } 
-    }, 
+    },
     { 
       path: '/dashboards/oportunidades', 
       name: 'oportunidades', 
