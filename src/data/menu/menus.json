@@ -10,9 +10,10 @@
     "submenus": [
       { "id": 2, "titulo": "Região", "rota": "/", "ordem": 1 },
       { "id": 3, "titulo": "Oportunidades", "rota": "/dashboards/oportunit", "ordem": 1 },
-      { "id": 4, "titulo": "IBP", "rota": "/dashboards/ibp2", "ordem": 1 },
-      { "id": 5, "titulo": "CNAE", "rota": "/dashboards/cnae", "ordem": 1 },
-      { "id": 6, "titulo": "Produtos Similares", "rota": "/cadastros/similaridade", "ordem": 1 }
+      { "id": 4, "titulo": "IBP", "rota": "/dashboards/ibp2", "ordem": 1 },,
+      { "id": 5, "titulo": "ANP", "rota": "/dashboards/anp", "ordem": 1 },
+      { "id": 6, "titulo": "CNAE", "rota": "/dashboards/cnae", "ordem": 1 },
+      { "id": 7, "titulo": "Produtos Similares", "rota": "/cadastros/similaridade", "ordem": 1 }
     ]
   },
   {
