@@ -16,37 +16,32 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 const api = axios.create({ baseURL: 'https://lubx-api.lubconsulta.com.br/bi/regiao-2', timeout: 20000 });
 // const api = axios.create({ baseURL: 'http://localhost:3000/bi/regiao-2', timeout: 20000 });
 
-// Plugin customizado para desenhar as linhas (Leader Lines)
 const doughnutLabelsLine = {
   id: 'doughnutLabelsLine',
   afterDraw(chart) {
-    // Só executa se for gráfico de rosca e se datalabels estiver ativo
-    if (chart.config.type !== 'doughnut' && chart.config.type !== 'pie') return;
-
     const { ctx } = chart;
     chart.data.datasets.forEach((dataset, i) => {
       chart.getDatasetMeta(i).data.forEach((datapoint, index) => {
         const { x, y, startAngle, endAngle, outerRadius } = datapoint;
         const midAngle = startAngle + (endAngle - startAngle) / 2;
 
-        // Lógica para não desenhar linha em labels ocultos (fatias pequenas nas Normas)
         const realData = dataset.realData || dataset.data;
         const total = realData.reduce((a, b) => a + b, 0);
-        if (total === 0) return;
         const val = realData[index];
-        
-        // Se o formatter do datalabels retornaria null, não desenhamos a linha
-        if (chart.options.plugins.datalabels.display && (val/total) < 0.04 && chart.canvas.id.includes('norma')) {
-           // Nota: O ID depende de como o Chart.js identifica o componente, 
-           // na dúvida, ele desenhará para todos os que têm label visível.
-        }
+        if (total === 0 || (val / total) < 0.01) return;
 
-        const x1 = x + Math.cos(midAngle) * outerRadius;
-        const y1 = y + Math.sin(midAngle) * outerRadius;
-        const x2 = x + Math.cos(midAngle) * (outerRadius + 15); // Aumentei um pouco a linha
-        const y2 = y + Math.sin(midAngle) * (outerRadius + 15);
+        const cos = Math.cos(midAngle);
+        const sin = Math.sin(midAngle);
 
-        ctx.strokeStyle = '#D1D5DB'; // Cinza suave
+        // Ponto inicial: borda do gráfico
+        const x1 = x + cos * outerRadius;
+        const y1 = y + sin * outerRadius;
+
+        // Ponto final: apenas 8 pixels para fora (linha curta)
+        const x2 = x + cos * (outerRadius + 8);
+        const y2 = y + sin * (outerRadius + 8);
+
+        ctx.strokeStyle = '#CBD5E1'; 
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
@@ -136,15 +131,29 @@ const handleChartClick = (event, elements, chartKey) => {
 };
 
 const openDetailedModal = async (type) => {
-    modalTitle.value = `Top 10 ${type} (Consolidado)`;
-    modalChartType.value = 'pie'; showModal.value = true; isModalLoading.value = true;
+    // Ajuste no título para refletir que os filtros estão ativos
+    modalTitle.value = `Top 10 ${type} (Filtrado)`;
+    modalChartType.value = 'pie'; 
+    showModal.value = true; 
+    isModalLoading.value = true;
+
     try {
-        const res = await api.get(type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos', { 
-            params: { estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, tipoVeiculo: 'Todos', jaso: 'Todos' } 
-        });
-        // ALTERADO: Ordenando por .frota em vez de .litros
+        // Agora incluímos o estado atual de todos os filtros selecionados
+        const params = { 
+            estado: selectedUF.value === 'Todos' ? '' : selectedUF.value, 
+            ...filters 
+        };
+        
+        const endpoint = type === 'Marcas' ? '/graficos/marcas' : '/graficos/modelos';
+        const res = await api.get(endpoint, { params });
+        
+        // Ordenação por frota e limite de 10 resultados
         modalData.value = res.data.data.sort((a,b) => b.frota - a.frota).slice(0, 10);
-    } catch (e) { console.error(e); } finally { isModalLoading.value = false; }
+    } catch (e) { 
+        console.error("Erro ao carregar dados do modal:", e); 
+    } finally { 
+        isModalLoading.value = false; 
+    }
 };
 
 const openStatesModal = () => { modalTitle.value = 'Volume por Estado (Completo)'; modalChartType.value = 'bar'; showModal.value = true; modalData.value = true; };
@@ -175,71 +184,38 @@ const getDoughnutOptions = (key) => ({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-        // Aumentamos o padding global para os textos escalonados não cortarem nas bordas do card
-        padding: 18 
+        // Padding inferior alto para jogar a legenda pro rodapé
+        padding: { top: 10, bottom: 10, left: 25, right: 25 }
     },
-    // Reduzimos o raio do gráfico para 65% para sobrar espaço para as etiquetas "subirem"
-    radius: '55%', 
-    cutout: '45%', 
-    onClick: (e, el) => handleChartClick(e, el, key),
+    // Gráfico maior ocupando o centro
+    radius: '70%', 
+    cutout: '70%', 
     plugins: {
         legend: {
             display: true,
             position: 'bottom',
-            align: 'end', // <--- Move a legenda para o canto inferior direito
+            align: 'center',
             labels: {
                 usePointStyle: true,
                 pointStyle: 'circle',
-                boxWidth: 18,
-                padding: 5, 
-                font: {
-                    family: "'Inter', sans-serif",
-                    size: 9,
-                    weight: '500'
-                }
+                boxWidth: 20,
+                padding: 5, // Espaço entre os itens da legenda
+                font: { size: 9, weight: '600' }
             }
         },
         datalabels: {
             display: true,
             anchor: 'end',
             align: 'end',
-            // FUNÇÃO DE ESCALONAMENTO (STAGGERING)
-            offset: (context) => {
-                const dataset = context.dataset;
-                const realData = dataset.realData || dataset.data;
-                const value = realData[context.dataIndex];
-                const total = realData.reduce((a, b) => a + b, 0);
-                
-                // Se a fatia for pequena (menos de 10%), alterna o offset em 3 níveis
-                // Isso faz com que os nomes fiquem um acima do outro
-                if (total > 0 && (value / total) < 0.20) {
-                    return (context.dataIndex % 5) * 7 + 0; 
-                }
-                return 10;
-            },
-            color: '#444',
-            textAlign: 'center',
-            font: {
-                family: "'Inter', sans-serif",
-                size: 8,
-                weight: 'bold'
-            },
+            offset: 8, // Número bem próximo da ponta da linha curta
+            color: '#475569',
+            font: { family: "'Inter', sans-serif", size: 10, weight: 'bold' },
             formatter: (v, ctx) => {
-                const label = ctx.chart.data.labels[ctx.dataIndex];
                 const realData = ctx.dataset.realData || ctx.dataset.data;
                 const total = realData.reduce((a, b) => a + b, 0);
                 const val = realData[ctx.dataIndex];
-                
-                if (total === 0) return null;
-                const pct = ((val / total) * 100).toFixed(1) + '%';
-                
-                // Se for muito pequeno (menos de 1%), nem exibe para não poluir
-                if ((val / total) < 0.01) return null;
-
-                // Para o gráfico de básico, ajuste específico solicitado anteriormente
-                if (label === 'SEMISSINTÉTICO') return label;
-
-                return `${label}\n${pct}`;
+                if (total === 0 || (val / total) < 0.01) return null;
+                return ((val / total) * 100).toFixed(1).replace('.', ',') + '%';
             }
         }
     }
@@ -534,7 +510,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             <div class="col-4">
                                 <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
                                     <small class="fw-bold text-muted d-block text-start mb-2">BÁSICO</small>
-                                    <div style="height: 250px;"> <!-- Aumentado um pouco para caber as labels fora -->
+                                    <div style="height: 260px;"> <!-- Aumentado um pouco para caber as labels fora -->
                                         <Doughnut 
                                             :data="{ 
                                                 labels: detalhada.graficos.basico.filter(i => i.label !== 'Não informado').map(i=>i.label), 
@@ -553,7 +529,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             <div class="col-4">
                                 <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
                                     <small class="fw-bold text-muted d-block text-start mb-2">SEGMENTO</small>
-                                    <div style="height: 250px;">
+                                    <div style="height: 260px;">
                                         <Doughnut 
                                             :data="{ 
                                                 labels: detalhada.graficos.segmento.map(i=>i.label), 
@@ -572,7 +548,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             <div class="col-4">
                                 <div class="card border-0 shadow-sm p-3 rounded-4 bg-white h-100 text-center">
                                     <small class="fw-bold text-muted d-block text-start mb-2">NORMAS (TOP 10)</small>
-                                    <div style="height: 250px;">
+                                    <div style="height: 260px;">
                                         <Doughnut 
                                             :data="normasChartData" 
                                             :options="getDoughnutOptions('norma')" 
@@ -592,7 +568,7 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
             <button @click="showModal = false" class="btn-close-custom"><X :size="20"/></button>
             <div class="text-center mb-4"><h4 class="fw-bold text-dark m-0">{{ modalTitle }}</h4></div>
             <div v-if="isModalLoading" class="text-center p-5"><div class="spinner-border text-orange"></div></div>
-            <div v-else style="height: 400px;">
+            <div v-else style="height: 500px;">
                 <!-- Gráfico de Cidades no Modal -->
 <Bar 
     v-if="modalChartType === 'bar-cities'" 
@@ -649,25 +625,38 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                         layout: {
                             // Aumentamos o padding inferior para a legenda não encostar no gráfico
                             padding: {
-                                top: 40,
+                                top: 30,
                                 bottom: 0,
-                                left: 10,
-                                right: 10
+                                left: 5,
+                                right: 5
                             }
                         },
-                        radius: '60%', 
+                        radius: '65%', 
                         plugins: { 
                             legend: { 
                                 display: true, 
-                                position: 'bottom', // Move para a parte de baixo
-                                align: 'end',       // Alinha à direita
+                                position: 'bottom',
+                                align: 'end',
                                 labels: { 
                                     usePointStyle: true, 
                                     pointStyle: 'circle', 
                                     font: { size: 10 },
-                                    padding: 15     // Espaço entre os itens da legenda
+                                    padding: 5
                                 }
-                            }, 
+                            },
+                            // ADICIONE ESTE BLOCO ABAIXO:
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => {
+                                        const label = context.label || '';
+                                        const dataArray = context.dataset.data;
+                                        const total = dataArray.reduce((acc, current) => acc + current, 0);
+                                        const currentValue = context.parsed;
+                                        const percentage = ((currentValue / total) * 100).toFixed(1) + '%';
+                                        return `${label}: ${percentage}`;
+                                    }
+                                }
+                            },
                             datalabels: { 
                                 display: true,
                                 anchor: 'end',
@@ -675,9 +664,8 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                                 offset: (context) => {
                                     const value = context.dataset.data[context.dataIndex];
                                     const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    // Se a fatia for pequena, escalona para não sobrepor
                                     if ((value / total) < 0.15) {
-                                        return (context.dataIndex % 3) * 35 + 10; 
+                                        return (context.dataIndex % 3) * 15 + 5; 
                                     }
                                     return 15;
                                 },
@@ -686,13 +674,13 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                                 font: { 
                                     family: 'Inter, sans-serif',
                                     weight: 'bold', 
-                                    size: 10 
+                                    size: 8 
                                 }, 
                                 formatter: (v, ctx) => { 
                                     return ctx.chart.data.labels[ctx.dataIndex] + '\n' + formatNum(v); 
                                 } 
                             } 
-                        } 
+                        }
                     }" 
                 />
             </div>
