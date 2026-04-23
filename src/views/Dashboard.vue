@@ -66,6 +66,19 @@ ChartJS.register(
     PointElement, LineElement, BarController, LineController, Title, Tooltip, Legend, ChartDataLabels
 );
 
+// Novos campos computados para Marcas e Modelos filtrados
+const totalMarcasCalculado = computed(() => {
+    // Se a API retornar a lista de marcas nos gráficos, usamos o tamanho dela, 
+    // caso contrário, mantém o valor original do card.
+    return detalhada.value?.graficos?.marcas?.length || 
+           detalhada.value?.cardsTopo?.find(c => c.id === 'marcas')?.valor || 0;
+});
+
+const totalModelosCalculado = computed(() => {
+    return detalhada.value?.graficos?.modelos?.length || 
+           detalhada.value?.cardsTopo?.find(c => c.id === 'modelos')?.valor || 0;
+});
+
 // --- ESTADOS ---
 const viewMode = ref('executive'); 
 const selectedUF = ref('Todos');
@@ -373,7 +386,12 @@ onMounted(() => { initMap(); loadFilters(); loadData(); });
                             <div>
                                 <!-- Alteração aqui: se for o card de litros, usa o valor calculado por nós -->
                                 <h2 class="fw-bold m-0 text-dark" style="font-size:1.7rem">
-                                    {{ k.id === 'litros-ano' ? formatNum(totalLitrosCalculado) : formatNum(k.valor) }}
+                                {{ 
+                                    k.id === 'litros-ano' ? formatNum(totalLitrosCalculado) : 
+                                    k.id === 'marcas' ? totalMarcasCalculado : 
+                                    k.id === 'modelos' ? totalModelosCalculado : 
+                                    formatNum(k.valor) 
+                                }}
                                 </h2>
                                 <small class="text-muted fw-bold d-block">{{ k.label }}</small>
                             </div>
