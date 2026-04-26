@@ -151,19 +151,42 @@ function exportarExcel() {
   document.body.removeChild(link);
 }
 
-// CORREÇÃO DO MODAL (RESTAURADA LÓGICA DE FILTRO POR ANO)
-function openProductModal(listaDeItens, ano, nomeEntidade) {
-  let produtos = [];
-  if (typeof listaDeItens === 'object' && !Array.isArray(listaDeItens)) {
-    Object.values(listaDeItens).forEach(sub => {
-       // Verifica tanto 'ano' quanto 'homologado_em' para compatibilidade
-       produtos.push(...sub.produtos.filter(p => (p.ano == ano || p.homologado_em == ano)));
+function openProductModal(origem, anoAlvo, nomeEntidade) {
+  let result = [];
+  const visaoInd = filtroPrincipal.value === 'Indústria';
+
+  if (Array.isArray(origem)) {
+    // Clique na sub-linha
+    result = origem.filter(p => (p.ano == anoAlvo || p.homologado_em == anoAlvo)).map(p => ({
+      ...p,
+      // Garante que o desempenho do SQL seja mapeado
+      desempenho_modal: p.nivel_desempenho || p.especificacoes || 'Não informado',
+      montadora_modal: visaoInd ? (nomeEntidade === 'nan' ? 'Uso Geral' : nomeEntidade) : (p.montadora === 'nan' ? 'Uso Geral' : p.montadora),
+      industria_modal: visaoInd ? (p.industria || 'Uso Geral') : (nomeEntidade === 'nan' ? 'Uso Geral' : nomeEntidade)
+    }));
+  } else if (typeof origem === 'object' && origem !== null) {
+    // Clique na linha principal
+    Object.entries(origem).forEach(([subNome, sub]) => {
+      if (sub.produtos) {
+        const filtrados = sub.produtos.filter(p => (p.ano == anoAlvo || p.homologado_em == anoAlvo));
+        filtrados.forEach(p => {
+          result.push({
+            ...p,
+            desempenho_modal: p.nivel_desempenho || p.especificacoes || 'Não informado',
+            montadora_modal: visaoInd ? (subNome === 'nan' ? 'Uso Geral' : subNome) : nomeEntidade,
+            industria_modal: visaoInd ? nomeEntidade : (subNome === 'nan' ? 'Uso Geral' : subNome)
+          });
+        });
+      }
     });
-  } else {
-    produtos = listaDeItens.filter(p => (p.ano == ano || p.homologado_em == ano));
   }
-  if (produtos.length > 0) {
-    selectedCell.value = { nome: nomeEntidade, ano, produtos };
+
+  if (result.length > 0) {
+    selectedCell.value = {
+      nome: (nomeEntidade === 'nan' ? 'Uso Geral' : nomeEntidade),
+      ano: anoAlvo,
+      produtos: result
+    };
   }
 }
 
@@ -360,24 +383,47 @@ const getLogo = (nome) => {
       </aside>
     </div>
 
-    <!-- MODAL DE PRODUTOS (RESTAURADO) -->
-    <div v-if="selectedCell" class="product-modal-overlay" @click="selectedCell = null">
-      <div class="product-modal" @click.stop>
-        <div class="modal-label">Produtos de {{ selectedCell.nome }} em {{ selectedCell.ano }}</div>
-        <table class="modal-prod-table">
-          <thead>
-            <tr><th>Produto</th><th>Viscosidade</th><th>Finalidade</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(p, i) in selectedCell.produtos" :key="i">
-              <td>{{ p.produto }}</td>
-              <td><span class="p-tag">{{ p.viscosidade || 'N.A' }}</span></td>
-              <td><span class="p-tag">{{ p.finalidade || 'Motor' }}</span></td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- MODAL DE PRODUTOS CORRIGIDO -->
+    <div v-if="selectedCell" class="product-modal-overlay">
+      <div class="product-modal">
+        <div class="modal-header">
+          <div class="modal-label">Aprovações de {{ selectedCell.nome }} em {{ selectedCell.ano }}</div>
+          <button class="btn-close-modal" @click="selectedCell = null">✕</button>
+        </div>
+
+        <div class="modal-table-wrapper">
+          <table class="modal-prod-table">
+            <thead>
+              <tr>
+                <!-- MUDANÇA 1: Cabeçalho inverte baseado no filtro global -->
+                <th>{{ filtroPrincipal === 'Indústria' ? 'Montadora' : 'Indústria' }}</th>
+                <th>Viscosidade</th>
+                <!-- MUDANÇA 2: Nível de Desempenho -->
+                <th style="width: 50%;">Nível de Desempenho</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(p, i) in selectedCell.produtos" :key="i">
+                <td style="font-weight: 600; color: #333;">
+                  {{ filtroPrincipal === 'Indústria' ? p.montadora_modal : p.industria_modal }}
+                </td>
+                
+                <td><span class="p-tag">{{ p.viscosidade || p.grau_sae || 'N.A' }}</span></td>
+                
+                <td>
+                  <!-- Usando o campo mapeado explicitamente para não falhar -->
+                  <span class="p-tag desempenho" :title="p.desempenho_modal">
+                    {{ p.desempenho_modal }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
+    
+
   </div>
 </template>
 
@@ -446,11 +492,64 @@ const getLogo = (nome) => {
 .logo-wrapper { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
 .fallback-oil-icon { font-style: normal; font-size: 14px; color: #f58220; }
 .fallback-oil-icon.sub { font-size: 11px; opacity: 0.6; }
-.product-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.product-modal { background: white; width: 600px; border-radius: 12px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
-.modal-label { font-size: 13px; font-weight: bold; color: #f58220; margin-bottom: 15px; border-bottom: 2px solid #fff3e6; padding-bottom: 8px; }
+/* MODAL REFATORADO */
+.product-modal-overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(0,0,0,0.7); 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  z-index: 1000; 
+}
+
+.product-modal { 
+  background: white; 
+  width: 950px; /* MUDANÇA 4: Largura aumentada */
+  max-height: 85vh;
+  border-radius: 12px; 
+  padding: 25px; 
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #fff3e6;
+  padding-bottom: 10px;
+}
+
+.modal-label { 
+  font-size: 14px; 
+  font-weight: bold; 
+  color: #f58220; 
+  margin: 0;
+}
+
+/* MUDANÇA 3: Botão fechar */
+.btn-close-modal {
+  background: #eee;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.2s;
+}
+.btn-close-modal:hover { background: #f58220; color: white; }
+
+.modal-table-wrapper { overflow-y: auto; flex: 1; }
+
 .modal-prod-table { width: 100%; border-collapse: collapse; text-align: left; }
-.modal-prod-table th { font-size: 10px; color: #999; text-transform: uppercase; padding: 8px; border-bottom: 1px solid #eee; }
-.modal-prod-table td { padding: 8px; font-size: 11px; border-bottom: 1px solid #f9f9f9; }
-.p-tag { background: #f5f5f5; border: 1px solid #ddd; padding: 2px 6px; border-radius: 4px; font-size: 9px; color: #777; }
+.modal-prod-table th { font-size: 11px; color: #999; text-transform: uppercase; padding: 12px 8px; border-bottom: 1px solid #eee; background: #fafafa; }
+.modal-prod-table td { padding: 10px 8px; font-size: 11px; border-bottom: 1px solid #f9f9f9; }
+
+.p-tag { background: #f5f5f5; border: 1px solid #ddd; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #555; }
+.p-tag.desempenho { background: #fff3e6; border-color: #ffe4cc; color: #d66a0e; line-height: 1.4; display: block; }
 </style>
