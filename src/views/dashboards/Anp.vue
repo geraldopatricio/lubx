@@ -90,17 +90,31 @@ const newsHomologacoes = computed(() => {
   return all.sort((a,b) => b.homologado_em - a.homologado_em).slice(0, 4);
 });
 
+// Gera a lista de anos com base na seleção do usuário
+const anosExibicao = computed(() => {
+  const inicio = parseInt(anoInicial.value);
+  const fim = parseInt(anoFinal.value);
+  const anos = [];
+  
+  // Proteção simples para não travar o browser se o usuário inverter os valores
+  if (inicio <= fim) {
+    for (let i = inicio; i <= fim; i++) {
+      anos.push(i);
+    }
+  }
+  return anos;
+});
+
 // FUNÇÃO EXPORTAR PARA EXCEL (CSV)
 function exportarExcel() {
-  const cabecalho = [filtroPrincipal.value, '2022', '2023', '2024', '2025', '2026'];
-  const linhas = listaFiltrada.value.map(item => [
-    item.nome,
-    item.totais[2022] || 0,
-    item.totais[2023] || 0,
-    item.totais[2024] || 0,
-    item.totais[2025] || 0,
-    item.totais[2026] || 0
-  ]);
+  // O cabeçalho agora usa a lista dinâmica de anos
+  const cabecalho = [filtroPrincipal.value, ...anosExibicao.value];
+  
+  const linhas = listaFiltrada.value.map(item => {
+    // Para cada item, percorremos a lista de anos dinâmica para pegar o valor ou 0
+    const valoresAnos = anosExibicao.value.map(ano => item.totais[ano] || 0);
+    return [item.nome, ...valoresAnos];
+  });
 
   let csvContent = "data:text/csv;charset=utf-8," 
     + cabecalho.join(";") + "\n"
@@ -153,7 +167,9 @@ const getLogo = (nome) => {
   if (marcasConfig[n]) return `/logos/lubrificantes/${marcasConfig[n].logo}.png`;
   const mKey = (nome || '').toLowerCase();
   if (montadorasConfig[mKey]) return `/logos/montadoras/${montadorasConfig[mKey].logo}.png`;
-  return '/logos/lubrificantes/generic.png';
+  
+  // Retorna null em vez de uma imagem genérica
+  return null; 
 };
 </script>
 
@@ -208,38 +224,47 @@ const getLogo = (nome) => {
         <table class="anp-table">
           <thead>
             <tr>
-              <th class="text-left">{{ filtroPrincipal.toUpperCase() }} > {{ filtroPrincipal === 'Indústria' ? 'MONTADORA' : 'INDÚSTRIA' }}</th>
-              <th v-for="ano in [2022, 2023, 2024, 2025, 2026]" :key="ano">{{ ano }}</th>
+                <th class="text-left">
+                    {{ filtroPrincipal.toUpperCase() }} > {{ filtroPrincipal === 'Indústria' ? 'MONTADORA' : 'INDÚSTRIA' }}
+                </th>
+                <!-- DINÂMICO AQUI -->
+                <th v-for="ano in anosExibicao" :key="ano">{{ ano }}</th>
             </tr>
-          </thead>
+            </thead>
           <tbody v-if="!loading">
             <template v-for="item in listaPaginada" :key="item.id">
               <tr class="main-row" :class="{ 'is-expanded': expandedRow === item.id }">
                 <td class="name-cell" @click="expandedRow = expandedRow === item.id ? null : item.id">
-                  <img :src="getLogo(item.nome)" class="logo-img" />
+                  <div class="logo-wrapper">
+                <img v-if="getLogo(item.nome)" :src="getLogo(item.nome)" class="logo-img" />
+                <i v-else class="fallback-oil-icon">🛢️</i>
+                </div>
                   <span class="item-nome">{{ item.nome }}</span>
                   <i class="arrow-icon" :class="{ 'up': expandedRow === item.id }"></i>
                 </td>
-                <td v-for="ano in [2022, 2023, 2024, 2025, 2026]" :key="ano">
-                  <span v-if="item.totais[ano]" class="val-badge" @click.stop="openProductModal(item.itens, ano, item.nome)">
+                <td v-for="ano in anosExibicao" :key="ano">
+                    <span v-if="item.totais[ano]" class="val-badge" @click.stop="openProductModal(item.itens, ano, item.nome)">
                     {{ item.totais[ano] }}
-                  </span>
-                  <span v-else>0</span>
+                    </span>
+                    <span v-else>0</span>
                 </td>
               </tr>
 
               <template v-if="expandedRow === item.id">
                 <tr v-for="(subData, subNome) in item.itens" :key="subNome" class="sub-row">
                   <td class="sub-name-cell">
-                    <img :src="getLogo(subNome)" class="logo-sub-img" />
+                    <div class="logo-wrapper">
+                    <img v-if="getLogo(subNome)" :src="getLogo(subNome)" class="logo-sub-img" />
+                    <i v-else class="fallback-oil-icon sub">🛢️</i>
+                    </div>
                     <span>{{ subNome === 'nan' ? (filtroPrincipal === 'Indústria' ? 'Sem Montadora' : 'Sem Indústria') : subNome }}</span>
                   </td>
-                  <td v-for="ano in [2022, 2023, 2024, 2025, 2026]" :key="ano">
-                    <span v-if="subData.totais[ano]" class="val-badge" @click.stop="openProductModal(subData.produtos, ano, subNome)">
-                      {{ subData.totais[ano] }}
-                    </span>
-                    <span v-else>0</span>
-                  </td>
+                  <td v-for="ano in anosExibicao" :key="ano">
+                        <span v-if="subData.totais[ano]" class="val-badge" @click.stop="openProductModal(subData.produtos, ano, subNome)">
+                        {{ subData.totais[ano] }}
+                        </span>
+                        <span v-else>0</span>
+                    </td>
                 </tr>
               </template>
             </template>
@@ -353,14 +378,14 @@ const getLogo = (nome) => {
 .btn-apply { width: 100%; background: #1a1a1a; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; }
 
 .main-content { display: grid; grid-template-columns: 1fr 350px; gap: 20px; }
-.table-container { background: white; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; }
+.table-container { background: white; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; overflow-x: auto; }
 .table-header-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: #888; }
 .btn-export { background: #f58220; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
 .anp-table { width: 100%; border-collapse: collapse; flex: 1; }
 /* COMPACTAÇÃO MÁXIMA DA TABELA */
 .anp-table th { padding: 8px; color: #8C6239; font-size: 12px; border-bottom: 2px solid #f0f0f0; }
-.anp-table td { padding: 4px 8px; text-align: center; border-bottom: 1px solid #f9f9f9; font-size: 12px; height: 35px; }
+.anp-table td { padding: 4px 8px; text-align: center; border-bottom: 1px solid #f9f9f9; font-size: 12px; height: 35px; min-width: 60px; }
 .text-left { text-align: left !important; }
 
 .name-cell { display: flex; align-items: center; gap: 8px; text-align: left !important; font-weight: 600; cursor: pointer; }
@@ -412,4 +437,30 @@ const getLogo = (nome) => {
 .modal-prod-table th { font-size: 10px; color: #999; text-transform: uppercase; padding: 8px; border-bottom: 1px solid #eee; }
 .modal-prod-table td { padding: 8px; font-size: 11px; border-bottom: 1px solid #f9f9f9; }
 .p-tag { background: #f5f5f5; border: 1px solid #ddd; padding: 2px 6px; border-radius: 4px; font-size: 9px; color: #777; }
+
+/* Adicione estas classes ao final do seu <style> */
+.logo-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.fallback-oil-icon {
+  font-style: normal;
+  font-size: 14px;
+  color: #f58220; /* Cor laranja para combinar com seu dashboard */
+}
+
+.fallback-oil-icon.sub {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* Ajuste a margem da célula de nome para acomodar o wrapper */
+.name-cell, .sub-name-cell {
+  gap: 10px !important;
+}
+
 </style>
