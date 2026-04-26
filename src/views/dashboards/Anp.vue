@@ -91,27 +91,31 @@ const listaPaginada = computed(() => {
 
 const totalPages = computed(() => Math.ceil(listaFiltrada.value.length / itemsPerPage) || 1);
 
-// Lógica para a Sidebar (Novas Homologações - MUDANÇAS 1, 2 e 3)
 const newsHomologacoes = computed(() => {
   const all = [];
   if (!rawData.value) return [];
 
+  // Lista de Indústrias IBP (em maiúsculo para comparação segura)
+  const empresasIBP = ['PETROBRAS', 'SHELL', 'IPIRANGA', 'RAIZEN', 'TOTALENERGIES'];
+
   Object.entries(rawData.value).forEach(([brandName, brand]) => {
+    
+    // 1. Verifica se a marca atual pertence ao grupo IBP
+    // Usamos .includes() para capturar variações como "PETROBRAS DISTRIBUIDORA" ou "RAIZEN S.A"
+    const isIBP = empresasIBP.some(emp => brandName.toUpperCase().includes(emp));
+
+    // Se não for IBP, ignora e pula para a próxima iteração
+    if (!isIBP) return;
+
     Object.entries(brand.itens).forEach(([subNome, sub]) => {
       if(sub.produtos) {
         sub.produtos.forEach(p => {
-            // Se a visão for 'Indústria', a montadora é o subNome. 
-            // Se a visão for 'Montadora', a montadora é o brandName (o grupo principal).
             const nomeDaMontadora = filtroPrincipal.value === 'Indústria' ? subNome : brandName;
 
             all.push({
                 ...p,
-                // Fabricante: Se visão Indústria é o grupo (brandName), se visão Montadora é o subgrupo (subNome)
                 fabricante: filtroPrincipal.value === 'Indústria' ? brandName : subNome,
-                
-                // Detentor: Pega o nome identificado acima
                 detentorNome: (nomeDaMontadora && nomeDaMontadora !== 'nan') ? nomeDaMontadora : 'Uso Geral',
-                
                 ano_limpo: p.ano || p.homologado_em,
                 desempenho_original: p.nivel_desempenho || p.especificacoes || 'N/A'
             });
@@ -120,7 +124,7 @@ const newsHomologacoes = computed(() => {
     });
   });
   
-  // Ordena por ano (mais recente primeiro) e pega os 4 últimos registros
+  // 2. Ordena por ano (mais recente primeiro) e pega os 4 últimos registros desse grupo filtrado
   return all.sort((a,b) => b.ano_limpo - a.ano_limpo).slice(0, 4);
 });
 
@@ -552,4 +556,4 @@ const getLogo = (nome) => {
 
 .p-tag { background: #f5f5f5; border: 1px solid #ddd; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #555; }
 .p-tag.desempenho { background: #fff3e6; border-color: #ffe4cc; color: #d66a0e; line-height: 1.4; display: block; }
-</style>
+</style>  
