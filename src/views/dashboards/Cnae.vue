@@ -12,7 +12,7 @@ const handleLoad = () => {
 
 <template>
   <div class="dashboard-container">
-    <!-- CABEÇALHO DO DASHBOARD -->
+    <!-- CABEÇALHO -->
     <div class="p-4 bg-white shadow-sm d-flex justify-content-between align-items-center">
       <div class="d-flex align-items-center gap-3">
         <div class="icon-circle-bg">
@@ -29,69 +29,60 @@ const handleLoad = () => {
     <div class="iframe-wrapper p-3">
       <div class="card border-0 shadow-sm rounded-4 overflow-hidden bg-white h-100 position-relative">
         
-        <!-- Spinner de carregamento (Opcional) -->
+        <!-- Overlay de carregamento -->
         <div v-if="isLoading" class="loader-overlay">
           <div class="spinner-border text-orange" role="status"></div>
           <span class="mt-2 fw-bold text-muted">Carregando Relatório...</span>
         </div>
 
-        <iframe title="Bi Cnaes LubConsulta" width="600" height="373.5" src="https://app.powerbi.com/view?r=eyJrIjoiZjg3MjgzOWYtNzBjNi00NTlkLTkzM2MtYTAwNmRlMWM0NDk1IiwidCI6ImEzYTY5ODI1LTA2YTMtNDU0Ny1iZGZkLTBlYWI3MDJmMTcyNiJ9" frameborder="0" allowFullScreen="true"></iframe>
+        <!-- ADICIONADO: class="powerbi-iframe" e @load="handleLoad" -->
+        <iframe 
+          class="powerbi-iframe"
+          title="Bi Cnaes LubConsulta" 
+          src="https://app.powerbi.com/view?r=eyJrIjoiZjg3MjgzOWYtNzBjNi00NTlkLTkzM2MtYTAwNmRlMWM0NDk1IiwidCI6ImEzYTY5ODI1LTA2YTMtNDU0Ny1iZGZkLTBlYWI3MDJmMTcyNiJ9" 
+          frameborder="0" 
+          allowFullScreen="true"
+          @load="handleLoad"
+        ></iframe>
 
       </div>
     </div>
   </div>
 </template>
 
+<script setup>
+import { ref } from 'vue';
+import { LayoutDashboard } from 'lucide-vue-next';
+
+const isLoading = ref(true);
+
+const handleLoad = () => {
+  console.log("Iframe carregado!");
+  isLoading.value = false;
+};
+</script>
+
 <style scoped>
+/* Garante que o container ocupe a tela toda */
 .dashboard-container {
   background-color: #f1f5f9;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .iframe-wrapper {
-  flex-grow: 1;
-  width: 100%;
+  flex: 1; /* Faz o wrapper ocupar o resto da tela */
   display: flex;
-  flex-direction: column;
 }
 
+/* O iframe deve ocupar 100% do card */
 .powerbi-iframe {
   width: 100%;
   height: 100%;
   border: none;
-  border-radius: 12px;
 }
 
-/* CORES E ESTILOS ORIGINAIS */
-.text-orange { color: #e97332 !important; }
-.icon-circle-bg { 
-  width: 45px; 
-  height: 45px; 
-  border-radius: 50%; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
-  background: #fff1eb; 
-}
-
-.btn-orange-outline { 
-  border: 2px solid #e97332; 
-  color: #e97332; 
-  background: white; 
-  transition: 0.3s; 
-  text-decoration: none;
-  border-radius: 8px;
-}
-
-.btn-orange-outline:hover { 
-  background: #fff1eb; 
-  color: #d15f22;
-}
-
-/* OVERLAY DE CARREGAMENTO */
 .loader-overlay {
   position: absolute;
   top: 0;
@@ -106,14 +97,14 @@ const handleLoad = () => {
   z-index: 10;
 }
 
-.spinner-border.text-orange {
-  color: #e97332 !important;
-}
-
-/* AJUSTE PARA MOBILE */
-@media (max-width: 768px) {
-  .powerbi-iframe {
-    height: calc(100vh - 150px);
-  }
+.text-orange { color: #e97332 !important; }
+.icon-circle-bg { 
+  width: 45px; 
+  height: 45px; 
+  border-radius: 50%; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  background: #fff1eb; 
 }
 </style>
